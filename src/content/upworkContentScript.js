@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.1";
+  const CONTENT_SCRIPT_VERSION = "0.1.2";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage

@@ -672,7 +672,14 @@
     const hasDetailContainer = Boolean(
       doc.querySelector("[data-test='job-details'], [data-test*='job-detail']")
     );
-    const hasTitle = Boolean(doc.querySelector("h1, [data-test*='job-title']"));
+    const hasDomTitle = Boolean(doc.querySelector("h1, [data-test*='job-title']"));
+    const hasDocumentTitle = Boolean(
+      (urlLooksDetail || hasDetailContainer) &&
+        cleanText(doc.title).length >= 12 &&
+        !/Upwork\s*$/i.test(cleanText(doc.title)) &&
+        !/Freelancer from/i.test(cleanText(doc.title))
+    );
+    const hasTitle = hasDomTitle || hasDocumentTitle;
     const hasDetailText = /payment verified|proposals?|fixed-price|hourly|client/i.test(
       textOf(doc.querySelector("main") || doc.body)
     );
