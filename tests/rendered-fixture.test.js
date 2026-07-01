@@ -54,6 +54,7 @@ test("renders score context labels for job cards and client history", (t) => {
       result.stderr || result.stdout || "Chrome fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-card-panel"/);
+    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.1"/);
     assert.match(result.stdout, />Job<\/span>/);
     assert.match(
       result.stdout,

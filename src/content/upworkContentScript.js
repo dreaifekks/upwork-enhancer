@@ -1,4 +1,5 @@
 (function attachContentScript(root) {
+  const CONTENT_SCRIPT_VERSION = "0.1.1";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -11,6 +12,13 @@
   let renderTimer = null;
   let currentUrl = window.location.href;
   let lastSidebarSignature = "";
+
+  if (document.documentElement) {
+    document.documentElement.setAttribute(
+      "data-uwe-content-script-version",
+      CONTENT_SCRIPT_VERSION
+    );
+  }
 
   function t(key, params) {
     return UWE.t(settings.language, key, params);
