@@ -493,17 +493,22 @@
       doc.querySelector("[data-test*='job-detail']") ||
       doc.querySelector("main") ||
       doc.body;
+    const currentUrl = documentUrl(doc);
+    const documentTitle = cleanText(
+      String(doc.title || "").replace(/\s*\|\s*Upwork.*/i, "")
+    );
     const title =
       firstText(rootNode, [
         "h1",
-        '[data-test*="job-title"]',
-        '[data-cy*="job-title"]'
-      ]) || doc.title.replace(/\s*\|\s*Upwork.*/i, "");
+        '[data-test*="job-title"]'
+      ]) ||
+      documentTitle ||
+      firstText(rootNode, ['[data-cy*="job-title"]']);
+    const fields = commonFields(rootNode, currentUrl);
     return {
-      ...commonFields(
-        rootNode,
-        root.location && root.location.href ? root.location.href : ""
-      ),
+      ...fields,
+      jobId: extractJobIdFromUrl(currentUrl) || fields.jobId,
+      url: currentUrl || fields.url,
       title: title || "Untitled job",
       source: "detail",
       context: "job"

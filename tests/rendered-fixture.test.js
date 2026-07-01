@@ -54,8 +54,12 @@ test("renders score context labels for job cards and client history", (t) => {
       result.stderr || result.stdout || "Chrome fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-card-panel"/);
-    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.2"/);
+    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.3"/);
     assert.match(result.stdout, /class="uwe-sidebar"/);
+    assert.match(
+      result.stdout,
+      /class="uwe-job-title">Chrome extension to qualify Upwork leads - Web Development</
+    );
     assert.match(result.stdout, /data-uwe-ai(=""|) disabled(=""|)/);
     assert.match(result.stdout, />Job<\/span>/);
     assert.match(
@@ -68,6 +72,10 @@ test("renders score context labels for job cards and client history", (t) => {
     );
     assert.doesNotMatch(result.stdout, /History: Yuriy L\./);
     assert.doesNotMatch(result.stdout, /History: Aleksei N\./);
+    assert.doesNotMatch(
+      result.stdout,
+      /class="uwe-job-title">3D Artist Needed/
+    );
   } finally {
     rmSync(profileDir, { recursive: true, force: true });
   }
