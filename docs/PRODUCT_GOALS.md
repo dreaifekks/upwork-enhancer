@@ -112,6 +112,12 @@ The detail page should show a sidebar with:
 - suggested proposal angle
 - optional AI-generated opening draft
 
+### Language
+
+The extension UI should support both English and Chinese display text.
+
+English should be the default display language. The user should be able to switch to Chinese in settings.
+
 ## Configuration
 
 The user should be able to configure:
@@ -127,6 +133,7 @@ The user should be able to configure:
 - preferred project types
 - blacklisted phrases
 - scoring weights
+- display language, with English as the default and Chinese as an option
 
 The scoring policy should live in editable local configuration where practical.
 

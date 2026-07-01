@@ -43,3 +43,4 @@ The first goal is not full automation. The extension should help a freelancer ma
 ## Project Docs
 
 - [Product goals](docs/PRODUCT_GOALS.md)
+- [MVP requirements and build plan](docs/MVP_REQUIREMENTS.md)
