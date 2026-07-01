@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upwork Enhancer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="popup-header">
+        <h1 data-i18n="popup.title">Upwork Enhancer</h1>
+        <button type="button" id="openOptions" class="secondary" data-i18n="popup.openOptions">
+          Full settings
+        </button>
+      </header>
+
+      <section class="popup-section">
+        <label class="field">
+          <span data-i18n="popup.language">Language</span>
+          <select id="language">
+            <option value="en" data-i18n="options.english">English</option>
+            <option value="zh" data-i18n="options.chinese">Chinese</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="popup-section">
+        <div class="section-heading">
+          <h2 data-i18n="popup.profile">Profile</h2>
+          <div class="button-row">
+            <button type="button" id="openProfile" class="secondary" data-i18n="popup.openProfile">
+              Open profile
+            </button>
+            <button type="button" id="importProfile" class="secondary" data-i18n="popup.importProfile">
+              Import current profile
+            </button>
+          </div>
+        </div>
+        <p id="profileStatus" class="muted"></p>
+      </section>
+
+      <section class="popup-section">
+        <h2 data-i18n="popup.preferences">Preferences</h2>
+        <label class="field">
+          <span data-i18n="popup.preferredSkills">Preferred skills</span>
+          <textarea id="preferredSkills" rows="4"></textarea>
+        </label>
+        <label class="field">
+          <span data-i18n="popup.avoidedSkills">Avoided skills</span>
+          <textarea id="avoidedSkills" rows="3"></textarea>
+        </label>
+        <div class="field-grid">
+          <label class="field">
+            <span data-i18n="popup.minimumHourlyRate">Min hourly</span>
+            <input id="minimumHourlyRate" type="number" min="0" step="1" />
+          </label>
+          <label class="field">
+            <span data-i18n="popup.minimumFixedBudget">Min fixed</span>
+            <input id="minimumFixedBudget" type="number" min="0" step="50" />
+          </label>
+        </div>
+      </section>
+
+      <section class="popup-section">
+        <div class="section-heading">
+          <h2 data-i18n="popup.ai">AI</h2>
+          <button type="button" id="testAi" class="secondary" data-i18n="popup.testAi">
+            Test AI
+          </button>
+        </div>
+        <p id="aiStatus" class="muted"></p>
+      </section>
+
+      <footer class="popup-footer">
+        <button type="button" id="save" data-i18n="popup.save">Save</button>
+        <span id="status" role="status"></span>
+      </footer>
+    </main>
+
+    <script src="../shared/defaultSettings.js"></script>
+    <script src="../shared/i18n.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -100,6 +100,8 @@ Each visible job card should receive compact badges:
 
 The list view should make scanning faster without covering important Upwork controls.
 
+Client history is also useful context, but it must not be confused with the current job. When a job detail page shows client history, each recent-history item should be scored separately with a visible `History` context label. The first version should score up to the latest 10 visible history entries and update after the user expands more history items.
+
 ### Job Detail
 
 The detail page should show a sidebar with:
@@ -118,6 +120,18 @@ The extension UI should support both English and Chinese display text.
 
 English should be the default display language. The user should be able to switch to Chinese in settings.
 
+### Toolbar Popup
+
+The extension icon should open a small operational settings panel for frequent actions:
+
+- switch language
+- open the configured freelancer profile URL
+- import or update the current freelancer profile
+- adjust common matching preferences
+- see whether AI is configured
+- test the configured AI connection
+- open the full options page
+
 ## Configuration
 
 The user should be able to configure:
@@ -126,6 +140,7 @@ The user should be able to configure:
 - API key
 - model name
 - freelancer profile summary
+- freelancer profile URL and imported profile snapshot
 - preferred skills
 - avoided skills or categories
 - minimum hourly rate
@@ -136,6 +151,8 @@ The user should be able to configure:
 - display language, with English as the default and Chinese as an option
 
 The scoring policy should live in editable local configuration where practical.
+
+The user's own Upwork profile should be a first-class matching input. The extension should be able to open a configured Upwork freelancer profile URL, initialize from the visible profile page, and merge profile skills into matching preferences without deleting manual overrides.
 
 ## Data Handling
 

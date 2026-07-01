@@ -58,12 +58,13 @@ Expected result: AI is used for judgment and writing assistance, not for simple 
 
 ### Configure Strategy
 
-User opens the extension options page.
+User clicks the extension icon for a quick settings panel, or opens the full options page for advanced configuration.
 
 The extension lets the user configure:
 
 - API base URL, model, and API key behavior
 - freelancer profile summary
+- current freelancer profile URL and imported profile snapshot
 - preferred and avoided skills
 - preferred project types
 - minimum hourly rate and fixed budget
@@ -72,6 +73,20 @@ The extension lets the user configure:
 - display language, with English as the default and Chinese as an option
 
 Expected result: the scoring strategy can evolve without code edits.
+
+### Initialize From Freelancer Profile
+
+User opens their own Upwork freelancer profile page and clicks the extension icon.
+
+The extension:
+
+- can open a configured Upwork freelancer profile URL from settings or the toolbar popup
+- extracts the visible profile title, overview, hourly rate, skills, languages, profile URL, and update time
+- stores a normalized profile snapshot locally
+- builds the profile summary used by optional AI prompts
+- merges visible profile skills into preferred skills without deleting manually configured preferences
+
+Expected result: personal match scoring starts from the user's actual Upwork profile instead of an empty or fully manual profile description.
 
 ## MVP Feature Requirements
 
@@ -126,6 +141,9 @@ Implementation notes:
 - Keep raw DOM selectors isolated from scoring logic.
 - Add parser fixtures from manually saved sanitized snippets when available.
 - Use a mutation observer or route-change detector because Upwork behaves like a dynamic web app.
+- Treat client history as individual recent-history entries, not as one large client container.
+- Score up to the latest 10 visible client-history entries, and rescan when the user expands Upwork's `View more` content.
+- Add an explicit context to every rendered score, such as `job`, `history`, or `clientJob`, so the user can see what object was scored.
 
 ### Local Scoring
 
@@ -187,6 +205,12 @@ Language requirements:
 - Allow the user to switch the display language in settings.
 - Keep parsed Upwork job content in its original language unless a future translation feature is explicitly added.
 - Keep scoring action values stable internally, such as `apply`, `watch`, `maybe`, and `pass`, while localizing labels shown to the user.
+
+Popup requirements:
+
+- Clicking the extension toolbar icon should open a small settings panel.
+- The panel should support common operations: language switching, opening/importing/updating the configured profile, preferred and avoided skills, minimum budget preferences, AI configured status, AI connection test, and a link to full settings.
+- The popup must not expose or overwrite the stored API key.
 
 ### AI Integration
 

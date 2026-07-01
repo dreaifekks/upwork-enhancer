@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mock Upwork Job | Upwork</title>
+    <link rel="stylesheet" href="../../src/content/upworkContentScript.css" />
+    <style>
+      body {
+        margin: 0;
+        background: #f3f7f2;
+        color: #1f2937;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      .mock-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 24px;
+        width: min(1180px, calc(100vw - 36px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      .mock-card,
+      main {
+        border: 1px solid #dfe7dd;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 22px;
+        box-shadow: 0 10px 30px rgb(15 23 42 / 8%);
+      }
+
+      .mock-list {
+        display: grid;
+        gap: 16px;
+      }
+
+      .client-history {
+        margin-top: 16px;
+      }
+
+      .history-item {
+        border-top: 1px solid #e5e7eb;
+        padding-top: 14px;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+
+      .air3-token {
+        display: inline-flex;
+        margin: 3px 4px 3px 0;
+        border-radius: 16px;
+        background: #eef6eb;
+        padding: 5px 9px;
+        font-size: 12px;
+      }
+
+      aside {
+        color: #5b677a;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mock-shell">
+      <div class="mock-list">
+        <article class="mock-card" data-test="job-tile" data-ev-job-uid="~021111111">
+          <a href="/jobs/~021111111">Chrome extension to qualify Upwork leads</a>
+          <h2>Chrome extension to qualify Upwork leads</h2>
+          <p>
+            Need a TypeScript browser extension with automation and API integration.
+            Payment verified. $45-$75/hr. Proposals: Less than 5. Posted 2 hours ago.
+          </p>
+          <span class="air3-token">Chrome Extension</span>
+          <span class="air3-token">TypeScript</span>
+          <span class="air3-token">Automation</span>
+          <p>4.95 stars, $25K spent, 82% hire rate</p>
+        </article>
+
+        <article class="mock-card" data-test="job-tile" data-ev-job-uid="~022222222">
+          <a href="/jobs/~022222222">Full stack AI app, small budget</a>
+          <h2>Full stack AI app, small budget</h2>
+          <p>
+            Must build everything ASAP, unpaid test required, contact on Telegram.
+            Fixed-price $50. Proposals: 50+.
+          </p>
+          <span class="air3-token">AI</span>
+          <span class="air3-token">Backend</span>
+          <p>Payment unverified. 3.8 stars, $100 spent</p>
+        </article>
+      </div>
+
+      <main data-test="job-details" data-ev-job-uid="~021111111">
+        <h1>Chrome extension to qualify Upwork leads</h1>
+        <p>
+          Need a TypeScript browser extension that evaluates Upwork opportunities,
+          shows compact badges, and uses an OpenAI-compatible API only on demand.
+          Payment verified. $45-$75/hr. Proposals: Less than 5. Posted 2 hours ago.
+        </p>
+        <span class="air3-token">Chrome Extension</span>
+        <span class="air3-token">TypeScript</span>
+        <span class="air3-token">Automation</span>
+        <p>4.95 stars, $25K spent, 82% hire rate</p>
+      </main>
+
+      <section class="mock-card client-history">
+        <h2>Client's recent history (3)</h2>
+        <article class="history-item">
+          <a href="/jobs/~023333333">
+            3D Artist Needed for Furniture 3D Modeling &amp; Photorealistic Rendering
+          </a>
+          <p>
+            To freelancer: Great rendering work with clear communication. Billed:
+            <a href="/freelancers/~019b5fabdfb27e5ad7/?referrer_url_path=/jobs/~023333333">
+              Yuriy L.
+            </a>
+            $621.23. 16 hrs @ $35.00/hr. Payment verified. 5.0 stars.
+          </p>
+        </article>
+        <article class="history-item">
+          <a href="/jobs/~024444444">
+            Telegram Bot for AI Assistant - Human Handoff &amp; Multi-Trainer Ready
+          </a>
+          <p>
+            To freelancer: Clear scope and quick feedback. Billed: $706.23.
+            <a href="/freelancers/~0165dbd59845afa942/?referrer_url_path=/jobs/~024444444">
+              Aleksei N.
+            </a>
+            18 hrs @ $35.00/hr. Payment verified. 5.0 stars.
+          </p>
+        </article>
+        <article class="history-item">
+          <a href="/jobs/~025555555">
+            SEO &amp; AI Search Specialist Needed - Service Business Website
+          </a>
+          <p>
+            To freelancer: Delivered a technical audit and keyword mapping.
+            15 hrs @ $30.00/hr. Payment verified. 5.0 stars.
+          </p>
+        </article>
+      </section>
+    </div>
+
+    <script src="../../src/shared/defaultSettings.js"></script>
+    <script src="../../src/shared/i18n.js"></script>
+    <script src="../../src/scoring/scoreJob.js"></script>
+    <script src="../../src/content/upworkParser.js"></script>
+    <script src="../../src/content/upworkContentScript.js"></script>
+  </body>
+</html>

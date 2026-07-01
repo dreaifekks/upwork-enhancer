@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upwork Enhancer Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="settings-shell">
+      <header class="settings-header">
+        <div>
+          <h1 data-i18n="options.title">Upwork Enhancer Settings</h1>
+          <p data-i18n="options.profileHelp">
+            Short context used by scoring and optional AI.
+          </p>
+        </div>
+        <button type="button" id="resetDefaults" data-i18n="options.reset">
+          Reset defaults
+        </button>
+      </header>
+
+      <form id="settingsForm" class="settings-form">
+        <section class="settings-section">
+          <h2 data-i18n="options.language">Display language</h2>
+          <label class="field">
+            <span data-i18n="options.language">Display language</span>
+            <select name="language" id="language">
+              <option value="en" data-i18n="options.english">English</option>
+              <option value="zh" data-i18n="options.chinese">Chinese</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h2 data-i18n="options.profile">Freelancer profile summary</h2>
+          <div class="settings-actions">
+            <button
+              type="button"
+              id="importProfile"
+              class="secondary-button"
+              data-i18n="options.importCurrentProfile"
+            >
+              Import current profile tab
+            </button>
+            <button
+              type="button"
+              id="openProfile"
+              class="secondary-button"
+              data-i18n="options.openProfile"
+            >
+              Open profile URL
+            </button>
+            <span id="profileMeta"></span>
+          </div>
+          <label class="field">
+            <span data-i18n="options.profile">Freelancer profile summary</span>
+            <textarea name="profileSummary" rows="4"></textarea>
+          </label>
+          <label class="field">
+            <span data-i18n="options.profileUrl">Profile URL</span>
+            <input name="profileUrl" type="url" placeholder="https://www.upwork.com/freelancers/~..." />
+          </label>
+        </section>
+
+        <section class="settings-grid">
+          <label class="field">
+            <span data-i18n="options.preferredSkills">Preferred skills</span>
+            <textarea name="preferredSkills" rows="5"></textarea>
+          </label>
+          <label class="field">
+            <span data-i18n="options.avoidedSkills">Avoided skills or categories</span>
+            <textarea name="avoidedSkills" rows="5"></textarea>
+          </label>
+          <label class="field">
+            <span data-i18n="options.projectTypes">Preferred project types</span>
+            <textarea name="preferredProjectTypes" rows="5"></textarea>
+          </label>
+          <label class="field">
+            <span data-i18n="options.blacklistedPhrases">Blacklisted phrases</span>
+            <textarea name="blacklistedPhrases" rows="5"></textarea>
+          </label>
+        </section>
+
+        <section class="settings-grid settings-grid--compact">
+          <label class="field">
+            <span data-i18n="options.minimumHourlyRate">Minimum hourly rate</span>
+            <input name="minimumHourlyRate" type="number" min="0" step="1" />
+          </label>
+          <label class="field">
+            <span data-i18n="options.minimumFixedBudget">Minimum fixed budget</span>
+            <input name="minimumFixedBudget" type="number" min="0" step="50" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h2 data-i18n="options.weights">Scoring weights</h2>
+          <div class="settings-grid settings-grid--compact">
+            <label class="field">
+              <span data-i18n="options.weightMatch">Match</span>
+              <input name="weightMatch" type="number" min="0" step="0.05" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.weightClient">Client quality</span>
+              <input name="weightClient" type="number" min="0" step="0.05" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.weightCompetition">Competition</span>
+              <input name="weightCompetition" type="number" min="0" step="0.05" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.weightRisk">Risk safety</span>
+              <input name="weightRisk" type="number" min="0" step="0.05" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2 data-i18n="options.thresholds">Action thresholds</h2>
+          <div class="settings-grid settings-grid--compact">
+            <label class="field">
+              <span data-i18n="options.thresholdApply">Apply</span>
+              <input name="thresholdApply" type="number" min="0" max="100" step="1" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.thresholdWatch">Watch</span>
+              <input name="thresholdWatch" type="number" min="0" max="100" step="1" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.thresholdPass">Pass</span>
+              <input name="thresholdPass" type="number" min="0" max="100" step="1" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2 data-i18n="options.ai">AI assistance</h2>
+          <label class="check-field">
+            <input name="apiEnabled" type="checkbox" />
+            <span data-i18n="options.aiEnabled">Enable AI actions</span>
+          </label>
+          <div class="settings-grid settings-grid--compact">
+            <label class="field">
+              <span data-i18n="options.apiBaseUrl">API base URL</span>
+              <input name="apiBaseUrl" type="url" placeholder="https://api.openai.com/v1" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.model">Model</span>
+              <input name="apiModel" type="text" />
+            </label>
+            <label class="field settings-grid__span">
+              <span data-i18n="options.apiKey">API key</span>
+              <input name="apiKey" type="password" autocomplete="off" />
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button
+              type="button"
+              id="testAi"
+              class="secondary-button"
+              data-i18n="options.aiTest"
+            >
+              Test AI connection
+            </button>
+          </div>
+        </section>
+
+        <footer class="settings-footer">
+          <button type="submit" data-i18n="options.save">Save settings</button>
+          <span id="status" role="status"></span>
+        </footer>
+      </form>
+    </main>
+
+    <script src="../shared/defaultSettings.js"></script>
+    <script src="../shared/i18n.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

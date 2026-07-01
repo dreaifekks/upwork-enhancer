@@ -1,0 +1,14 @@
+{
+  "name": "upwork-enhancer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension for evaluating Upwork opportunities while browsing.",
+  "scripts": {
+    "validate": "node scripts/validate-extension.mjs",
+    "test": "node --test tests/*.test.js",
+    "check": "npm run validate && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

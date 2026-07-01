@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Upwork Enhancer",
+  "description": "Evaluate Upwork opportunities in context with local scoring and optional AI assistance.",
+  "version": "0.1.0",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://www.upwork.com/*", "https://*.upwork.com/*"],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "action": {
+    "default_title": "Upwork Enhancer",
+    "default_popup": "src/popup/popup.html"
+  },
+  "background": {
+    "service_worker": "src/background/serviceWorker.js"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://www.upwork.com/*", "https://*.upwork.com/*"],
+      "js": [
+        "src/shared/defaultSettings.js",
+        "src/shared/i18n.js",
+        "src/scoring/scoreJob.js",
+        "src/content/upworkParser.js",
+        "src/content/upworkContentScript.js"
+      ],
+      "css": ["src/content/upworkContentScript.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
