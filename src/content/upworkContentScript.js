@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.9";
+  const CONTENT_SCRIPT_VERSION = "0.1.10";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -353,6 +353,7 @@
   function positionSidebar(sidebar) {
     if (!sidebar) return;
     if (sidebar.classList.contains("uwe-sidebar--inline")) {
+      sidebar.style.width = "";
       sidebar.style.left = "";
       sidebar.style.right = "";
       sidebar.style.top = "";
@@ -361,6 +362,7 @@
       return;
     }
     if (window.innerWidth <= 980) {
+      sidebar.style.width = "";
       sidebar.style.left = "";
       sidebar.style.right = "";
       sidebar.style.top = "";
@@ -374,20 +376,27 @@
     const fallbackTop = 84;
     const mainRect = findMainContentRect();
     const measuredWidth = sidebar.getBoundingClientRect().width || 372;
-    const sidebarWidth = Math.min(measuredWidth, 328, window.innerWidth - margin * 2);
+    let sidebarWidth = Math.min(measuredWidth, 328, window.innerWidth - margin * 2);
     const fallbackLeft = margin;
     let top = fallbackTop;
     let left = fallbackLeft;
 
     if (mainRect) {
       top = clamp(mainRect.top, 70, Math.max(70, window.innerHeight - 180));
-      left = clamp(
-        mainRect.left - sidebarWidth - gap,
-        margin,
-        window.innerWidth - sidebarWidth - margin
-      );
+      const availableLeft = mainRect.left - gap - margin;
+      if (availableLeft >= 240) {
+        sidebarWidth = Math.min(sidebarWidth, availableLeft);
+        left = Math.max(margin, mainRect.left - sidebarWidth - gap);
+      } else {
+        left = clamp(
+          mainRect.left + gap,
+          margin,
+          window.innerWidth - sidebarWidth - margin
+        );
+      }
     }
 
+    sidebar.style.width = `${Math.round(sidebarWidth)}px`;
     sidebar.style.left = `${Math.round(left)}px`;
     sidebar.style.right = "auto";
     sidebar.style.top = `${Math.round(top)}px`;
@@ -444,7 +453,12 @@
           UWE.cleanText(a.textContent).length - UWE.cleanText(b.textContent).length
         );
       });
-    if (candidates[0]) return candidates[0];
+    if (candidates[0]) {
+      return (
+        candidates[0].closest(".air3-card-section, section, article") ||
+        candidates[0]
+      );
+    }
 
     const title = findVisibleTitle();
     if (!title) return null;
@@ -462,6 +476,7 @@
         if (
           rect.width >= Math.max(420, titleRect.width) &&
           rect.width <= 980 &&
+          rect.left >= titleRect.left - 80 &&
           rect.left <= titleRect.left + 12 &&
           rect.height >= titleRect.height
         ) {
@@ -718,7 +733,7 @@
       });
       if (response && response.ok) {
         output.hidden = false;
-        output.textContent = response.text;
+        output.innerHTML = renderMarkdown(response.text);
         status.textContent = t("sidebar.aiResult");
       } else {
         status.textContent = response && response.error ? response.error : "AI failed";
@@ -737,6 +752,100 @@
       };
       return entities[char];
     });
+  }
+
+  function renderMarkdown(value) {
+    const lines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
+    const blocks = [];
+    let paragraph = [];
+    let list = null;
+    let code = null;
+
+    const flushParagraph = () => {
+      if (!paragraph.length) return;
+      blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+      paragraph = [];
+    };
+    const flushList = () => {
+      if (!list || !list.items.length) return;
+      const tag = list.ordered ? "ol" : "ul";
+      blocks.push(
+        `<${tag}>${list.items
+          .map((item) => `<li>${renderInlineMarkdown(item)}</li>`)
+          .join("")}</${tag}>`
+      );
+      list = null;
+    };
+    const flushCode = () => {
+      if (!code) return;
+      blocks.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      code = null;
+    };
+
+    lines.forEach((line) => {
+      if (/^```/.test(line)) {
+        if (code) {
+          flushCode();
+        } else {
+          flushParagraph();
+          flushList();
+          code = [];
+        }
+        return;
+      }
+      if (code) {
+        code.push(line);
+        return;
+      }
+      if (!line.trim()) {
+        flushParagraph();
+        flushList();
+        return;
+      }
+
+      const heading = line.match(/^(#{1,3})\s+(.+)$/);
+      if (heading) {
+        flushParagraph();
+        flushList();
+        const level = Math.min(heading[1].length + 2, 5);
+        blocks.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+        return;
+      }
+
+      const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+      const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
+      if (unordered || ordered) {
+        flushParagraph();
+        const orderedList = Boolean(ordered);
+        if (!list || list.ordered !== orderedList) {
+          flushList();
+          list = { ordered: orderedList, items: [] };
+        }
+        list.items.push((unordered || ordered)[1]);
+        return;
+      }
+
+      paragraph.push(line.trim());
+    });
+
+    flushCode();
+    flushParagraph();
+    flushList();
+    return blocks.join("") || `<p>${escapeHtml(String(value || ""))}</p>`;
+  }
+
+  function renderInlineMarkdown(value) {
+    return escapeHtml(value)
+      .replace(
+        /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        (_match, label, url) => {
+          const href = String(url).replace(/&amp;/g, "&");
+          return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+        }
+      )
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>");
   }
 
   function scheduleRender() {

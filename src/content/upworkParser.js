@@ -64,8 +64,20 @@
       element &&
         element.matches &&
         element.matches("a[href]") &&
-        isJobUrl(element.getAttribute("href"))
+        isJobUrl(element.getAttribute("href")) &&
+        !isUtilityJobLink(element)
     );
+  }
+
+  function isUtilityJobLink(element) {
+    const label = cleanText(
+      [
+        textOf(element),
+        element && element.getAttribute ? element.getAttribute("aria-label") : "",
+        element && element.getAttribute ? element.getAttribute("title") : ""
+      ].join(" ")
+    );
+    return /^open job(?: in (?:a )?new window)?$/i.test(label);
   }
 
   function jobLinksOf(node) {

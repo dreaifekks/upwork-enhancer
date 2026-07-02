@@ -54,7 +54,7 @@ test("renders score context labels for job cards and client history", (t) => {
       result.stderr || result.stdout || "Chrome fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
-    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.9"/);
+    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.10"/);
     assert.match(result.stdout, /class="uwe-sidebar[^"]*"/);
     assert.match(
       result.stdout,
@@ -170,10 +170,12 @@ test("renders Upwork slider detail review with h4 title and long summary", (t) =
       result.stderr || result.stdout || "Chrome slider fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-sidebar[^"]*uwe-sidebar--inline/);
+    assert.match(result.stdout, /Opportunity Review/);
     assert.match(
       result.stdout,
       /Senior Full-Stack Engineer Needed to Stabilize or Rebuild Internal Data Automation Platform/
     );
+    assert.doesNotMatch(result.stdout, /History: Open job in a new window/);
     const reviewIndex = result.stdout.indexOf('class="uwe-sidebar');
     const summaryIndex = result.stdout.indexOf("Summary Job Description");
     assert.ok(reviewIndex >= 0, "review panel should render in slider");
