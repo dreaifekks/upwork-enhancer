@@ -490,21 +490,37 @@
     };
   }
 
-  function parseJobDetail(doc) {
-    const rootNode =
+  function findDetailRootNode(doc) {
+    return (
+      doc.querySelector(".air3-slider-job-details .job-details-content") ||
+      doc.querySelector(".air3-slider-job-details") ||
       doc.querySelector("[data-test='job-details']") ||
       doc.querySelector("[data-test*='job-detail']") ||
       doc.querySelector("main") ||
-      doc.body;
+      doc.body
+    );
+  }
+
+  function isSliderDetailRoot(rootNode) {
+    return Boolean(
+      rootNode &&
+        rootNode.matches &&
+        (rootNode.matches(".air3-slider-job-details, .job-details-content") ||
+          rootNode.closest(".air3-slider-job-details"))
+    );
+  }
+
+  function parseJobDetail(doc) {
+    const rootNode = findDetailRootNode(doc);
     const currentUrl = documentUrl(doc);
     const documentTitle = cleanText(
       String(doc.title || "").replace(/\s*\|\s*Upwork.*/i, "")
     );
+    const titleSelectors = isSliderDetailRoot(rootNode)
+      ? ["h1", "h2", "h3", "h4", '[data-test*="job-title"]']
+      : ["h1", '[data-test*="job-title"]'];
     const title =
-      firstText(rootNode, [
-        "h1",
-        '[data-test*="job-title"]'
-      ]) ||
+      firstText(rootNode, titleSelectors) ||
       documentTitle ||
       firstText(rootNode, ['[data-cy*="job-title"]']);
     const fields = commonFields(rootNode, currentUrl);
@@ -678,10 +694,20 @@
     const currentUrl = documentUrl(doc);
     const urlLooksDetail =
       /\/jobs\//.test(currentUrl) || /\/details\/~[A-Za-z0-9_]+/.test(currentUrl);
+    const rootNode = findDetailRootNode(doc);
     const hasDetailContainer = Boolean(
-      doc.querySelector("[data-test='job-details'], [data-test*='job-detail']")
+      doc.querySelector(
+        "[data-test='job-details'], [data-test*='job-detail'], .air3-slider-job-details, .job-details-content"
+      )
     );
-    const hasDomTitle = Boolean(doc.querySelector("h1, [data-test*='job-title']"));
+    const hasDomTitle = Boolean(
+      rootNode &&
+        rootNode.querySelector(
+          isSliderDetailRoot(rootNode)
+            ? "h1, h2, h3, h4, [data-test*='job-title']"
+            : "h1, [data-test*='job-title']"
+        )
+    );
     const hasDocumentTitle = Boolean(
       (urlLooksDetail || hasDetailContainer) &&
         cleanText(doc.title).length >= 12 &&
@@ -690,7 +716,7 @@
     );
     const hasTitle = hasDomTitle || hasDocumentTitle;
     const hasDetailText = /payment verified|proposals?|fixed-price|hourly|client/i.test(
-      textOf(doc.querySelector("main") || doc.body)
+      textOf(rootNode || doc.querySelector("main") || doc.body)
     );
     return (urlLooksDetail || hasDetailContainer) && hasTitle && hasDetailText;
   }

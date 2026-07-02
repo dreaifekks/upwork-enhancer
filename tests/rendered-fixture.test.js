@@ -54,7 +54,7 @@ test("renders score context labels for job cards and client history", (t) => {
       result.stderr || result.stdout || "Chrome fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
-    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.7"/);
+    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.9"/);
     assert.match(result.stdout, /class="uwe-sidebar[^"]*"/);
     assert.match(
       result.stdout,
@@ -125,6 +125,59 @@ test("renders slider job review inline before summary", (t) => {
     const summaryIndex = result.stdout.indexOf('class="mock-summary"');
     assert.ok(reviewIndex >= 0, "review panel should render");
     assert.ok(summaryIndex > reviewIndex, "review panel should be before summary");
+  } finally {
+    rmSync(profileDir, { recursive: true, force: true });
+  }
+});
+
+test("renders Upwork slider detail review with h4 title and long summary", (t) => {
+  if (process.env.UWE_RUN_BROWSER_SMOKE !== "1") {
+    t.skip("set UWE_RUN_BROWSER_SMOKE=1 to run the local Chrome fixture render");
+    return;
+  }
+
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("Chrome executable not found for rendered fixture smoke test");
+    return;
+  }
+
+  const profileDir = mkdtempSync(join(tmpdir(), "uwe-chrome-profile-"));
+  try {
+    const fixtureUrl = `file://${resolve("tests/fixtures/mock-upwork-slider.html")}?_modalInfo=slider`;
+    const result = spawnSync(
+      chrome,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--allow-file-access-from-files",
+        `--user-data-dir=${profileDir}`,
+        "--virtual-time-budget=2000",
+        "--dump-dom",
+        fixtureUrl
+      ],
+      {
+        encoding: "utf8",
+        timeout: 15000
+      }
+    );
+
+    assert.equal(
+      result.status,
+      0,
+      result.stderr || result.stdout || "Chrome slider fixture render failed"
+    );
+    assert.match(result.stdout, /class="uwe-sidebar[^"]*uwe-sidebar--inline/);
+    assert.match(
+      result.stdout,
+      /Senior Full-Stack Engineer Needed to Stabilize or Rebuild Internal Data Automation Platform/
+    );
+    const reviewIndex = result.stdout.indexOf('class="uwe-sidebar');
+    const summaryIndex = result.stdout.indexOf("Summary Job Description");
+    assert.ok(reviewIndex >= 0, "review panel should render in slider");
+    assert.ok(summaryIndex > reviewIndex, "review panel should be before slider summary");
   } finally {
     rmSync(profileDir, { recursive: true, force: true });
   }

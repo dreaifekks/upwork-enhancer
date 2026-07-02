@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upwork</title>
+    <link rel="stylesheet" href="../../src/content/upworkContentScript.css" />
+    <style>
+      body {
+        margin: 0;
+        background: #111827;
+        color: #e5e7eb;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      main {
+        min-height: 100vh;
+        padding: 32px;
+      }
+
+      .job-tile {
+        width: 720px;
+        margin-bottom: 18px;
+        border: 1px solid #2f3b44;
+        border-radius: 8px;
+        padding: 18px;
+        background: #162024;
+      }
+
+      .air3-slider-job-details {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 760px;
+        height: 100vh;
+        overflow: auto;
+        border-left: 1px solid #2f3b44;
+        background: #111827;
+      }
+
+      .job-details-content {
+        padding: 48px 28px;
+      }
+
+      .air3-card-section {
+        border-top: 1px solid #2f3b44;
+        padding: 28px 0;
+      }
+
+      h2,
+      h3,
+      h4 {
+        margin: 0 0 12px;
+      }
+
+      .air3-token {
+        display: inline-flex;
+        margin: 3px 4px 3px 0;
+        border-radius: 16px;
+        background: #263238;
+        padding: 5px 9px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="job-tile">
+        <a href="/jobs/~021111111">Background list card</a>
+        <h2>Background list card</h2>
+        <p>Payment verified. $35-$55/hr. Proposals: 50+.</p>
+      </article>
+    </main>
+
+    <div class="air3-fullscreen-container is-scrolled-bottom">
+      <div class="air3-slider air3-slider-job-details is-right-aligned">
+        <div class="air3-slider-content">
+          <div class="air3-slider-body">
+            <div class="job-details-loader">
+              <div class="job-details-content">
+                <div class="job-details-card d-flex gap-0 air3-card air3-card-outline p-0 slider">
+                  <div class="air3-card-sections">
+                    <section class="air3-card-section">
+                      <h4>
+                        Senior Full-Stack Engineer Needed to Stabilize or Rebuild Internal Data Automation Platform
+                      </h4>
+                      <p>Posted yesterday Worldwide</p>
+                    </section>
+
+                    <section class="air3-card-section">
+                      <div class="break mt-2">
+                        Summary Job Description:
+                        We have a working internal data automation platform, but it was built
+                        quickly and now has technical debt. The system works, but it is not
+                        as stable, clean, or product-grade as we need it to be. We process
+                        large datasets with the goal of handling millions of records per
+                        month. We need someone who understands scale, queues, database
+                        performance, scraping reliability, and operational safety.
+                        Please include a detailed Loom video made specifically for this job.
+                        Payment verified. $50-$70/hr. Proposals: 50+. Interviewing: 2.
+                        Client rating is 4.91 of 217 reviews. $462K total spent. 55% hire rate.
+                        JavaScript React Python Node.js MySQL API CSS.
+                      </div>
+                    </section>
+
+                    <section class="air3-card-section">
+                      <h3>Skills and Expertise</h3>
+                      <span class="air3-token">Python</span>
+                      <span class="air3-token">JavaScript</span>
+                      <span class="air3-token">React</span>
+                      <span class="air3-token">Node.js</span>
+                      <span class="air3-token">MySQL</span>
+                    </section>
+                  </div>
+
+                  <aside>
+                    <h3>About the client</h3>
+                    <p>Payment method verified. 4.91 of 217 reviews.</p>
+                    <p>440 jobs posted 55% hire rate. $462K total spent.</p>
+                  </aside>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="../../src/shared/defaultSettings.js"></script>
+    <script src="../../src/shared/i18n.js"></script>
+    <script src="../../src/scoring/scoreJob.js"></script>
+    <script src="../../src/content/upworkParser.js"></script>
+    <script src="../../src/content/upworkContentScript.js"></script>
+  </body>
+</html>

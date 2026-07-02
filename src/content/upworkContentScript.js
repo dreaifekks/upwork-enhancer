@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.7";
+  const CONTENT_SCRIPT_VERSION = "0.1.9";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -397,6 +397,8 @@
 
   function findDetailRoot() {
     return (
+      document.querySelector(".air3-slider-job-details .job-details-content") ||
+      document.querySelector(".air3-slider-job-details") ||
       document.querySelector("[data-test='job-details']") ||
       document.querySelector("[data-test*='job-detail']") ||
       document.querySelector("main") ||
@@ -418,16 +420,30 @@
 
   function findInlineReviewAnchor() {
     const rootNode = findDetailRoot();
-    const candidates = Array.from(rootNode.querySelectorAll("section, article, div, p"))
+    const candidates = Array.from(
+      rootNode.querySelectorAll(
+        ".air3-card-section, section, article, div, p"
+      )
+    )
       .filter((element) => {
         if (element.closest(".uwe-sidebar, .uwe-card-panel")) return false;
         const rect = element.getBoundingClientRect();
         if (rect.width < 260 || rect.height < 40) return false;
         const text = UWE.cleanText(element.textContent);
-        if (text.length < 80 || text.length > 4200) return false;
+        if (text.length < 80 || text.length > 12000) return false;
         return /^(Summary|Job Description)\b/i.test(text);
       })
-      .sort((a, b) => UWE.cleanText(a.textContent).length - UWE.cleanText(b.textContent).length);
+      .sort((a, b) => {
+        const aSlider = a.closest(".air3-slider-job-details") ? 0 : 1;
+        const bSlider = b.closest(".air3-slider-job-details") ? 0 : 1;
+        if (aSlider !== bSlider) return aSlider - bSlider;
+        const aSection = a.matches("section, .air3-card-section") ? 0 : 1;
+        const bSection = b.matches("section, .air3-card-section") ? 0 : 1;
+        if (aSection !== bSection) return aSection - bSection;
+        return (
+          UWE.cleanText(a.textContent).length - UWE.cleanText(b.textContent).length
+        );
+      });
     if (candidates[0]) return candidates[0];
 
     const title = findVisibleTitle();
@@ -460,7 +476,12 @@
   }
 
   function findVisibleTitle() {
-    return Array.from(document.querySelectorAll("h1, [data-test*='job-title']"))
+    const rootNode = findDetailRoot();
+    const isSliderRoot = Boolean(rootNode.closest(".air3-slider-job-details"));
+    const selector = isSliderRoot
+      ? "h1, h2, h3, h4, [data-test*='job-title']"
+      : "h1, [data-test*='job-title']";
+    return Array.from(rootNode.querySelectorAll(selector))
       .filter((element) => !element.closest(".uwe-sidebar, .uwe-card-panel"))
       .find((element) => {
         const rect = element.getBoundingClientRect();
