@@ -110,6 +110,11 @@
     const blacklistedMatches = unique(
       settings.blacklistedPhrases.filter((phrase) => includesPhrase(text, phrase))
     );
+    const offPlatformMatches = unique(
+      (settings.offPlatformPhrases || []).filter((phrase) =>
+        includesPhrase(text, phrase)
+      )
+    );
 
     let matchScore = 50;
     if (preferredSkillMatches.length) {
@@ -259,9 +264,13 @@
 
     let riskPenalty = 15;
     if (blacklistedMatches.length) riskPenalty += 30;
-    if (includesPhrase(text, "outside upwork") || includesPhrase(text, "telegram") || includesPhrase(text, "whatsapp")) {
+    if (offPlatformMatches.length) {
       riskPenalty += 32;
-      riskNotes.push(reason("reason.offPlatform"));
+      riskNotes.push(
+        reason("reason.offPlatform", {
+          phrases: offPlatformMatches.slice(0, 4)
+        })
+      );
     }
     if (includesPhrase(text, "unpaid test") || includesPhrase(text, "free sample")) {
       riskPenalty += 35;

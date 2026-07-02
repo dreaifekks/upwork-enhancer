@@ -43,7 +43,7 @@ test("flags unpaid off-platform low-budget work as pass", () => {
     {
       title: "Need expert full stack AI automation ASAP",
       description:
-        "Tiny fixed budget. Must do unpaid test and contact on Telegram outside Upwork. Proposals: 50+.",
+        "Tiny fixed budget. Must do unpaid test and contact outside Upwork. Proposals: 50+.",
       fixedBudget: 50,
       proposalCount: 50,
       clientPaymentVerified: false,
@@ -56,6 +56,61 @@ test("flags unpaid off-platform low-budget work as pass", () => {
   assert.equal(result.recommendedAction, "pass");
   assert.equal(result.riskLevel, "high");
   assert.ok(result.riskNotes.length >= 2);
+});
+
+test("does not treat Telegram or WhatsApp as off-platform risk by default", () => {
+  const result = scoreJob(
+    {
+      title: "Build an AI automation dashboard",
+      description:
+        "Need React TypeScript automation with OpenAI API integration. We use Telegram or WhatsApp as a gateway for vendor access.",
+      skills: ["React", "TypeScript", "Automation", "OpenAI"],
+      hourlyMin: 45,
+      hourlyMax: 70,
+      proposalCount: 4,
+      postedAgeHours: 2,
+      clientPaymentVerified: true,
+      clientRating: 4.95,
+      clientSpend: 25000,
+      clientHireRate: 80
+    },
+    UWE.DEFAULT_SETTINGS
+  );
+
+  assert.notEqual(result.recommendedAction, "pass");
+  assert.equal(result.riskLevel, "low");
+  assert.equal(
+    result.riskNotes.some((note) => note.key === "reason.offPlatform"),
+    false
+  );
+});
+
+test("uses configured off-platform phrases for high-risk pass decisions", () => {
+  const settings = UWE.normalizeSettings({
+    ...UWE.DEFAULT_SETTINGS,
+    offPlatformPhrases: ["telegram"]
+  });
+  const result = scoreJob(
+    {
+      title: "Build an AI automation dashboard",
+      description:
+        "Need React TypeScript automation with OpenAI API integration. We use Telegram or WhatsApp as a gateway for vendor access.",
+      skills: ["React", "TypeScript", "Automation", "OpenAI"],
+      hourlyMin: 45,
+      hourlyMax: 70,
+      proposalCount: 4,
+      postedAgeHours: 2,
+      clientPaymentVerified: true,
+      clientRating: 4.95,
+      clientSpend: 25000,
+      clientHireRate: 80
+    },
+    settings
+  );
+
+  assert.equal(result.recommendedAction, "pass");
+  assert.equal(result.riskLevel, "high");
+  assert.ok(result.riskNotes.some((note) => note.key === "reason.offPlatform"));
 });
 
 test("localizes labels in English and Chinese", () => {
@@ -77,13 +132,35 @@ test("normalizes intentionally empty list settings without restoring defaults", 
     preferredSkills: "",
     avoidedSkills: [],
     preferredProjectTypes: "",
-    blacklistedPhrases: ""
+    blacklistedPhrases: "",
+    offPlatformPhrases: ""
   });
 
   assert.deepEqual(settings.preferredSkills, []);
   assert.deepEqual(settings.avoidedSkills, []);
   assert.deepEqual(settings.preferredProjectTypes, []);
   assert.deepEqual(settings.blacklistedPhrases, []);
+  assert.deepEqual(settings.offPlatformPhrases, []);
+});
+
+test("migrates legacy off-platform defaults out of blacklisted phrases", () => {
+  const settings = UWE.normalizeSettings({
+    blacklistedPhrases: [
+      "unpaid test",
+      "free sample",
+      "outside upwork",
+      "telegram",
+      "whatsapp",
+      "commission only"
+    ]
+  });
+
+  assert.deepEqual(settings.blacklistedPhrases, [
+    "unpaid test",
+    "free sample",
+    "commission only"
+  ]);
+  assert.deepEqual(settings.offPlatformPhrases, ["outside upwork"]);
 });
 
 test("normalizes theme setting with auto default", () => {
@@ -101,6 +178,13 @@ test("normalizes imported profile snapshots and builds profile summary", () => {
       hourlyRate: "$30.00/hr",
       overview: "I build and maintain full-stack applications.",
       skills: "React, Node.js\nOpenAI API",
+      portfolio: [
+        {
+          title: "AI support chatbot",
+          description: "RAG assistant with document upload workflow",
+          skills: "Python, FastAPI"
+        }
+      ],
       languages: ["English: Conversational", "Chinese: Native"]
     }
   });
@@ -115,6 +199,11 @@ test("normalizes imported profile snapshots and builds profile summary", () => {
     "Node.js",
     "OpenAI API"
   ]);
+  assert.deepEqual(settings.profileSnapshot.portfolio[0], {
+    title: "AI support chatbot",
+    description: "RAG assistant with document upload workflow",
+    skills: ["Python", "FastAPI"]
+  });
   assert.match(
     UWE.profileSummaryFromSnapshot(settings.profileSnapshot),
     /Node\.js\/React Full-Stack Developer/

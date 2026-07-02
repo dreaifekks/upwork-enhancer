@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.13";
+  const CONTENT_SCRIPT_VERSION = "0.1.15";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -13,6 +13,8 @@
   let currentUrl = window.location.href;
   let lastSidebarSignature = "";
   let aiAnalysisState = null;
+  const detailScoreCache = new Map();
+  const DETAIL_SCORE_CACHE_MAX = 30;
 
   if (document.documentElement) {
     document.documentElement.setAttribute(
@@ -188,6 +190,72 @@
     return UWE.scoreJob(job, settings);
   }
 
+  function normalizedJobKey(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return (UWE.extractJobIdFromUrl && UWE.extractJobIdFromUrl(raw)) || raw;
+  }
+
+  function detailCacheKeys(job, result) {
+    return Array.from(
+      new Set(
+        [
+          result && result.jobId,
+          job && job.jobId,
+          job && job.url,
+          result && result.url
+        ]
+          .map(normalizedJobKey)
+          .filter(Boolean)
+      )
+    );
+  }
+
+  function scoreSignature(result) {
+    return JSON.stringify({
+      jobId: result.jobId,
+      overallScore: result.overallScore,
+      recommendedAction: result.recommendedAction,
+      matchScore: result.matchScore,
+      clientQualityScore: result.clientQualityScore,
+      competitionScore: result.competitionScore,
+      riskScore: result.riskScore,
+      riskLevel: result.riskLevel
+    });
+  }
+
+  function cacheDetailScore(job, result) {
+    const keys = detailCacheKeys(job, result);
+    if (!keys.length) return;
+    const entry = {
+      job,
+      result,
+      signature: scoreSignature(result)
+    };
+    keys.forEach((key) => {
+      detailScoreCache.delete(key);
+      detailScoreCache.set(key, entry);
+    });
+    while (detailScoreCache.size > DETAIL_SCORE_CACHE_MAX) {
+      detailScoreCache.delete(detailScoreCache.keys().next().value);
+    }
+  }
+
+  function cachedDetailScoreForKey(value) {
+    const key = normalizedJobKey(value);
+    return key ? detailScoreCache.get(key) || null : null;
+  }
+
+  function cachedDetailScoreForJob(job) {
+    if (!job || job.context !== "job") return null;
+    const keys = detailCacheKeys(job, { jobId: job.jobId });
+    for (const key of keys) {
+      const entry = detailScoreCache.get(key);
+      if (entry) return entry;
+    }
+    return null;
+  }
+
   function badge(label, value, modifier, helpText) {
     const className = ["uwe-badge", modifier].filter(Boolean).join(" ");
     const helpClass = helpText ? " uwe-score-help" : "";
@@ -259,17 +327,33 @@
     const previousText = card.getAttribute("data-uwe-text") || "";
     const nextText = UWE.cleanText(card.textContent).slice(0, 1200);
     const existing = findExistingCardPanel(card);
-    if (previousText === nextText && existing) {
+    const cachedExistingScore =
+      existing && cachedDetailScoreForKey(existing.getAttribute("data-uwe-job-id"));
+    const existingHasFreshDetailScore =
+      cachedExistingScore &&
+      existing.getAttribute("data-uwe-score-source") === "detail" &&
+      existing.getAttribute("data-uwe-score-signature") === cachedExistingScore.signature;
+    if (
+      previousText === nextText &&
+      existing &&
+      (!cachedExistingScore || existingHasFreshDetailScore)
+    ) {
       applyTheme(existing);
       return;
     }
 
     const job = UWE.parseJobCard(card);
-    const result = score(job);
+    const cachedScore = cachedDetailScoreForJob(job);
+    const result = cachedScore ? cachedScore.result : score(job);
     const panel = existing || document.createElement("div");
     panel.className = "uwe-card-panel";
     applyTheme(panel);
     panel.setAttribute("data-uwe-job-id", result.jobId || "");
+    panel.setAttribute("data-uwe-score-source", cachedScore ? "detail" : "list");
+    panel.setAttribute(
+      "data-uwe-score-signature",
+      cachedScore ? cachedScore.signature : scoreSignature(result)
+    );
     panel.innerHTML = [
       contextBadge(job),
       badge(
@@ -338,6 +422,7 @@
   }
 
   function invalidateRenderedScores() {
+    detailScoreCache.clear();
     document.querySelectorAll("[data-uwe-text]").forEach((element) => {
       element.removeAttribute("data-uwe-text");
     });
@@ -352,12 +437,11 @@
     }
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
-    placeSidebar(sidebar, placement);
     applyTheme(sidebar);
     return sidebar;
   }
 
-  function placeSidebar(sidebar, placement) {
+  function placeSidebar(sidebar, placement, anchor) {
     if (placement !== "inline") {
       if (sidebar.parentElement !== document.body) {
         document.body.appendChild(sidebar);
@@ -365,19 +449,25 @@
       return;
     }
 
-    const anchor = findInlineReviewAnchor();
     const parent = (anchor && anchor.parentElement) || findDetailRoot();
-    if (!parent) {
-      document.body.appendChild(sidebar);
+    if (!anchor || !parent) {
       return;
     }
-    if (anchor && anchor !== sidebar) {
+    if (anchor !== sidebar) {
       parent.insertBefore(sidebar, anchor);
       return;
     }
     if (sidebar.parentElement !== parent) {
       parent.insertBefore(sidebar, parent.firstChild);
     }
+  }
+
+  function ensureInlineSidebarAnchored(sidebar, placement) {
+    if (placement !== "inline") return true;
+    const anchor = findInlineReviewAnchor();
+    if (!anchor) return false;
+    placeSidebar(sidebar, placement, anchor);
+    return true;
   }
 
   function positionSidebar(sidebar) {
@@ -401,35 +491,31 @@
       return;
     }
 
-    const gap = 18;
+    const gap = 14;
     const margin = 22;
     const fallbackTop = 84;
     const mainRect = findMainContentRect();
     const maxWidth = 360;
     const minWidth = 260;
+    const compactMinWidth = 180;
     const measuredWidth = sidebar.getBoundingClientRect().width || maxWidth;
     let sidebarWidth = Math.min(measuredWidth, maxWidth, window.innerWidth - margin * 2);
-    const fallbackLeft = clamp(
-      Math.round(window.innerWidth * 0.12),
-      margin,
-      window.innerWidth - sidebarWidth - margin
-    );
     let top = fallbackTop;
-    let left = fallbackLeft;
+    let left = margin;
 
     if (mainRect) {
       top = clamp(mainRect.top, 70, Math.max(70, window.innerHeight - 180));
-      const availableLeft = mainRect.left - gap - margin;
+      const availableLeft = Math.max(0, mainRect.left - gap - margin);
       const availableRight = window.innerWidth - mainRect.right - gap - margin;
-      if (availableLeft >= minWidth) {
+      if (availableLeft >= compactMinWidth) {
         sidebarWidth = Math.min(sidebarWidth, maxWidth, availableLeft);
         left = mainRect.left - sidebarWidth - gap;
       } else if (availableRight >= minWidth) {
         sidebarWidth = Math.min(sidebarWidth, maxWidth, availableRight);
         left = mainRect.right + gap;
       } else if (availableLeft > 0) {
-        sidebarWidth = Math.max(180, Math.min(sidebarWidth, availableLeft));
-        left = Math.max(margin, mainRect.left - sidebarWidth - gap);
+        sidebarWidth = Math.min(sidebarWidth, availableLeft);
+        left = mainRect.left - sidebarWidth - gap;
       } else {
         left = clamp(
           mainRect.left + gap,
@@ -458,16 +544,8 @@
     );
   }
 
-  function isSliderDetailPage() {
-    const url = window.location.href;
-    return (
-      /\/nx\/find-work\/[^?]+\/details\//.test(url) ||
-      /[?&]_modalInfo=/.test(url)
-    );
-  }
-
   function detailPlacement() {
-    return isSliderDetailPage() ? "inline" : "floating-left";
+    return "inline";
   }
 
   function findInlineReviewAnchor() {
@@ -483,7 +561,7 @@
         if (rect.width < 260 || rect.height < 40) return false;
         const text = UWE.cleanText(element.textContent);
         if (text.length < 80 || text.length > 12000) return false;
-        return /^(Summary|Job Description)\b/i.test(text);
+        return isSummaryLikeElement(element, text);
       })
       .sort((a, b) => {
         const aSlider = a.closest(".air3-slider-job-details") ? 0 : 1;
@@ -503,10 +581,26 @@
       );
     }
 
-    const title = findVisibleTitle();
-    if (!title) return null;
-    const titleBlock = title.closest("section, article, div") || title;
-    return titleBlock.nextElementSibling;
+    return null;
+  }
+
+  function isSummaryLikeElement(element, text) {
+    if (/^(Summary|Job Description)\b/i.test(text)) return true;
+    const heading = Array.from(
+      element.querySelectorAll("h1, h2, h3, h4, [role='heading']")
+    )
+      .map((item) => UWE.cleanText(item.textContent))
+      .find(Boolean);
+    if (/^(Summary|Job Description)\b/i.test(heading || "")) return true;
+
+    let sibling = element.previousElementSibling;
+    for (let index = 0; sibling && index < 3; index += 1) {
+      const value = UWE.cleanText(sibling.textContent);
+      if (/^(Summary|Job Description)\b/i.test(value)) return true;
+      if (value.length > 80) break;
+      sibling = sibling.previousElementSibling;
+    }
+    return false;
   }
 
   function findMainContentRect() {
@@ -559,10 +653,7 @@
 
   function findVisibleTitle() {
     const rootNode = findDetailRoot();
-    const isSliderRoot = Boolean(rootNode.closest(".air3-slider-job-details"));
-    const selector = isSliderRoot
-      ? "h1, h2, h3, h4, [data-test*='job-title']"
-      : "h1, [data-test*='job-title']";
+    const selector = "h1, h2, h3, h4, [data-test*='job-title']";
     return Array.from(rootNode.querySelectorAll(selector))
       .filter((element) => !element.closest(".uwe-sidebar, .uwe-card-panel"))
       .find((element) => {
@@ -583,9 +674,16 @@
     }
 
     const placement = detailPlacement();
+    const anchor = placement === "inline" ? findInlineReviewAnchor() : null;
+    const existingSidebar = document.querySelector(".uwe-sidebar");
+    if (placement === "inline" && !anchor && !existingSidebar) {
+      lastSidebarSignature = "";
+      return;
+    }
     const sidebar = getSidebar(placement);
     const job = UWE.parseJobDetail(document);
     const result = score(job);
+    cacheDetailScore(job, result);
     const signature = JSON.stringify({
       jobId: result.jobId,
       title: job.title,
@@ -598,11 +696,11 @@
     });
     if (
       signature === lastSidebarSignature &&
-      sidebar.querySelector(".uwe-sidebar__body") &&
-      sidebar.contains(document.activeElement) &&
-      /^(TEXTAREA|INPUT|BUTTON)$/.test(document.activeElement.tagName)
+      sidebar.querySelector(".uwe-sidebar__body")
     ) {
       sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
+      placeSidebar(sidebar, placement, anchor);
+      ensureInlineSidebarAnchored(sidebar, placement);
       applyTheme(sidebar);
       positionSidebar(sidebar);
       renderAiState(sidebar);
@@ -637,7 +735,8 @@
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
     sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
-    placeSidebar(sidebar, placement);
+    placeSidebar(sidebar, placement, anchor);
+    ensureInlineSidebarAnchored(sidebar, placement);
     applyTheme(sidebar);
     positionSidebar(sidebar);
     bindSidebarEvents(sidebar, job, result);
@@ -1021,8 +1120,8 @@
       if (currentUrl !== window.location.href) {
         currentUrl = window.location.href;
       }
-      renderListBadges();
       await renderDetailSidebar();
+      renderListBadges();
     }, 180);
   }
 

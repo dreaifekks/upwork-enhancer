@@ -54,11 +54,29 @@
         <h2 data-i18n="popup.preferences">Preferences</h2>
         <label class="field">
           <span data-i18n="popup.preferredSkills">Preferred skills</span>
-          <textarea id="preferredSkills" rows="4"></textarea>
+          <input id="preferredSkills" type="hidden" />
+          <div class="tag-editor" data-tag-editor="preferredSkills">
+            <div class="tag-editor__tags" data-tag-list></div>
+            <input
+              class="tag-editor__input"
+              type="text"
+              autocomplete="off"
+              data-tag-input
+            />
+          </div>
         </label>
         <label class="field">
           <span data-i18n="popup.avoidedSkills">Avoided skills</span>
-          <textarea id="avoidedSkills" rows="3"></textarea>
+          <input id="avoidedSkills" type="hidden" />
+          <div class="tag-editor" data-tag-editor="avoidedSkills">
+            <div class="tag-editor__tags" data-tag-list></div>
+            <input
+              class="tag-editor__input"
+              type="text"
+              autocomplete="off"
+              data-tag-input
+            />
+          </div>
         </label>
         <div class="field-grid">
           <label class="field">

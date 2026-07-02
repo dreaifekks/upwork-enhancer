@@ -42,6 +42,96 @@ test("PATCH_SETTINGS preserves the stored API key while returning public setting
   assert.equal(worker.store.uwe_settings_v1.minimumHourlyRate, 45);
 });
 
+test("IMPORT_PROFILE_FROM_ACTIVE_TAB replaces default preferences from profile and portfolio", async () => {
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        preferredSkills: ["chrome extension", "browser extension"],
+        preferredProjectTypes: ["browser extension"],
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    tabQueryImpl: async () => [{ id: 7 }],
+    tabSendMessageImpl: async () => ({
+      ok: true,
+      profile: {
+        title: "AI Customer Support Chatbot Developer",
+        overview:
+          "I build Next.js, Python, and OpenAI RAG systems with admin dashboards.",
+        skills: ["Python", "Next.js"],
+        portfolio: [
+          {
+            title: "AI customer support chatbot",
+            description:
+              "RAG chatbot with vector database retrieval, OpenAI API, FastAPI, and React admin dashboard.",
+            skills: ["React", "FastAPI"]
+          }
+        ],
+        profileUrl: "https://www.upwork.com/freelancers/~011",
+        updatedAt: "2026-07-02T00:00:00.000Z"
+      }
+    })
+  });
+
+  const response = await worker.send({ type: "IMPORT_PROFILE_FROM_ACTIVE_TAB" });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(
+    Array.from(worker.store.uwe_settings_v1.preferredSkills.slice(0, 6)),
+    ["Python", "Next.js", "React", "FastAPI", "OpenAI API", "LLM"]
+  );
+  assert.ok(worker.store.uwe_settings_v1.preferredSkills.includes("RAG"));
+  assert.equal(
+    worker.store.uwe_settings_v1.preferredSkills.includes("chrome extension"),
+    false
+  );
+  assert.deepEqual(
+    Array.from(worker.store.uwe_settings_v1.preferredProjectTypes.slice(0, 4)),
+    ["ai integration", "chatbot", "web app", "api integration"]
+  );
+  assert.equal(response.settings.api.configured, true);
+  assert.equal(response.settings.api.apiKey, "");
+});
+
+test("IMPORT_PROFILE_FROM_ACTIVE_TAB keeps current preferences when profile has no signals", async () => {
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        preferredSkills: ["Manual Skill"],
+        preferredProjectTypes: ["manual project"]
+      }
+    },
+    tabQueryImpl: async () => [{ id: 7 }],
+    tabSendMessageImpl: async () => ({
+      ok: true,
+      profile: {
+        title: "",
+        overview: "",
+        skills: [],
+        portfolio: [],
+        profileUrl: "https://www.upwork.com/freelancers/~011",
+        updatedAt: "2026-07-02T00:00:00.000Z"
+      }
+    })
+  });
+
+  const response = await worker.send({ type: "IMPORT_PROFILE_FROM_ACTIVE_TAB" });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(Array.from(worker.store.uwe_settings_v1.preferredSkills), [
+    "Manual Skill"
+  ]);
+  assert.deepEqual(
+    Array.from(worker.store.uwe_settings_v1.preferredProjectTypes),
+    ["manual project"]
+  );
+});
+
 test("TEST_AI_CONFIG sends the stored API key only from the service worker", async () => {
   const fetchCalls = [];
   const worker = createServiceWorker({
@@ -255,6 +345,7 @@ function streamResponse(chunks) {
 function createServiceWorker({
   initialStore = {},
   fetchImpl,
+  tabQueryImpl,
   tabSendMessageImpl
 } = {}) {
   const store = { ...initialStore };
@@ -295,6 +386,9 @@ function createServiceWorker({
       },
       tabs: {
         async query() {
+          if (tabQueryImpl) {
+            return tabQueryImpl();
+          }
           return [];
         },
         async sendMessage(tabId, message, options) {

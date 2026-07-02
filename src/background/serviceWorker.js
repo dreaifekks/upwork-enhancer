@@ -147,15 +147,20 @@ async function importProfileFromActiveTab() {
   const profile = UWE.normalizeProfileSnapshot(response.profile);
   const summary =
     response.profile.summary || UWE.profileSummaryFromSnapshot(profile);
+  const derivedPreferredSkills = derivePreferredSkills(profile);
+  const derivedProjectTypes = derivePreferredProjectTypes(profile);
   const next = UWE.normalizeSettings({
     ...current,
     profileSummary: summary,
     profileUrl: profile.profileUrl,
     profileUpdatedAt: profile.updatedAt,
     profileSnapshot: profile,
-    preferredSkills: uniqueList(
-      current.preferredSkills.concat(profile.skills || [])
-    ).slice(0, 40)
+    preferredSkills: derivedPreferredSkills.length
+      ? derivedPreferredSkills
+      : current.preferredSkills,
+    preferredProjectTypes: derivedProjectTypes.length
+      ? derivedProjectTypes
+      : current.preferredProjectTypes
   });
   const publicSettings = await saveSettings(next);
   return {
@@ -620,6 +625,121 @@ function buildPrompt(job, score, settings, options = {}) {
     "3. Proposal angle",
     "4. First 2-3 sentence opener"
   ].join("\n");
+}
+
+function derivePreferredSkills(profile) {
+  const sourceText = profilePreferenceText(profile);
+  const portfolioSkills = (profile.portfolio || []).flatMap((item) =>
+    Array.isArray(item.skills) ? item.skills : []
+  );
+  const skillRules = [
+    ["JavaScript", ["javascript"]],
+    ["TypeScript", ["typescript"]],
+    ["React", ["react", "react.js", "reactjs"]],
+    ["Next.js", ["next.js", "nextjs"]],
+    ["Node.js", ["node.js", "nodejs"]],
+    ["Python", ["python"]],
+    ["Django", ["django"]],
+    ["FastAPI", ["fastapi"]],
+    ["Flask", ["flask"]],
+    ["OpenAI API", ["openai", "gpt", "chatgpt"]],
+    ["LLM", ["llm", "large language model", "openai", "gpt"]],
+    ["RAG", ["rag", "retrieval augmented generation"]],
+    ["Chatbot Development", ["chatbot", "chat bot", "customer support bot"]],
+    ["AI Integration", ["ai integration", "ai-powered", "artificial intelligence"]],
+    ["Automation", ["automation", "workflow automation", "rpa"]],
+    ["Web Scraping", ["web scraping", "scraping", "crawler", "crawling"]],
+    ["Playwright", ["playwright"]],
+    ["Puppeteer", ["puppeteer"]],
+    ["Browser Extension", ["browser extension", "chrome extension"]],
+    ["API Integration", ["api integration", "rest api", "graphql"]],
+    ["PostgreSQL", ["postgresql", "postgres"]],
+    ["MySQL", ["mysql"]],
+    ["Supabase", ["supabase"]],
+    ["MongoDB", ["mongodb"]],
+    [
+      "Vector Database",
+      ["vector database", "embedding", "embeddings", "pinecone", "qdrant", "weaviate"]
+    ],
+    ["Tailwind CSS", ["tailwind", "tailwind css"]],
+    ["Docker", ["docker"]],
+    ["Vercel", ["vercel"]]
+  ];
+  return uniqueList([
+    ...(profile.skills || []),
+    ...portfolioSkills,
+    ...matchesFromRules(sourceText, skillRules)
+  ]).slice(0, 40);
+}
+
+function derivePreferredProjectTypes(profile) {
+  const sourceText = profilePreferenceText(profile);
+  const projectTypeRules = [
+    [
+      "ai integration",
+      ["ai integration", "ai-powered", "openai", "llm", "rag", "artificial intelligence"]
+    ],
+    [
+      "chatbot",
+      ["chatbot", "chat bot", "customer support bot", "support automation"]
+    ],
+    ["automation", ["automation", "workflow automation", "rpa", "scheduled job"]],
+    ["browser extension", ["browser extension", "chrome extension", "extension"]],
+    ["web app", ["web app", "web application", "saas", "dashboard", "admin panel"]],
+    [
+      "api integration",
+      ["api integration", "openai api", "rest api", "graphql", "webhook"]
+    ],
+    [
+      "data pipeline",
+      ["data pipeline", "etl", "scraping", "crawler", "large datasets"]
+    ],
+    ["backend system", ["backend", "database", "queue", "worker"]],
+    ["frontend app", ["frontend", "react", "next.js", "tailwind"]]
+  ];
+  return matchesFromRules(sourceText, projectTypeRules).slice(0, 20);
+}
+
+function profilePreferenceText(profile) {
+  const portfolioText = (profile.portfolio || [])
+    .map((item) =>
+      [
+        item.title,
+        item.description,
+        Array.isArray(item.skills) ? item.skills.join(" ") : ""
+      ].join(" ")
+    )
+    .join(" ");
+  return normalizePreferenceText(
+    [
+      profile.title,
+      profile.overview,
+      Array.isArray(profile.skills) ? profile.skills.join(" ") : "",
+      portfolioText
+    ].join(" ")
+  );
+}
+
+function matchesFromRules(sourceText, rules) {
+  return rules
+    .filter(([, signals]) =>
+      signals.some((signal) => hasPreferenceSignal(sourceText, signal))
+    )
+    .map(([label]) => label);
+}
+
+function hasPreferenceSignal(sourceText, signal) {
+  const normalizedSignal = normalizePreferenceText(signal);
+  if (!normalizedSignal) return false;
+  return sourceText.includes(normalizedSignal);
+}
+
+function normalizePreferenceText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function uniqueList(values) {

@@ -9,12 +9,15 @@
   const openProfile = document.getElementById("openProfile");
   const profileMeta = document.getElementById("profileMeta");
   const testAi = document.getElementById("testAi");
+  const tagEditors = new Map();
+  const TAG_EDITOR_ROW_STEP = 3;
 
   let settings = UWE.normalizeSettings(UWE.DEFAULT_SETTINGS);
 
   init();
 
   async function init() {
+    initTagEditors();
     settings = await loadSettings();
     populateForm(settings);
     applyLanguage(settings.language);
@@ -151,10 +154,11 @@
     form.elements.theme.value = next.theme || "auto";
     form.elements.profileSummary.value = next.profileSummary || "";
     form.elements.profileUrl.value = next.profileUrl || "";
-    form.elements.preferredSkills.value = next.preferredSkills.join("\n");
-    form.elements.avoidedSkills.value = next.avoidedSkills.join("\n");
-    form.elements.preferredProjectTypes.value = next.preferredProjectTypes.join("\n");
-    form.elements.blacklistedPhrases.value = next.blacklistedPhrases.join("\n");
+    setTagEditorValue("preferredSkills", next.preferredSkills);
+    setTagEditorValue("avoidedSkills", next.avoidedSkills);
+    setTagEditorValue("preferredProjectTypes", next.preferredProjectTypes);
+    setTagEditorValue("blacklistedPhrases", next.blacklistedPhrases);
+    setTagEditorValue("offPlatformPhrases", next.offPlatformPhrases);
     form.elements.minimumHourlyRate.value = next.minimumHourlyRate;
     form.elements.minimumFixedBudget.value = next.minimumFixedBudget;
     form.elements.weightMatch.value = roundWeight(next.weights.match);
@@ -172,6 +176,7 @@
   }
 
   function readForm() {
+    syncTagEditors();
     const current = new FormData(form);
     return UWE.normalizeSettings({
       language: current.get("language"),
@@ -186,6 +191,7 @@
       minimumHourlyRate: current.get("minimumHourlyRate"),
       minimumFixedBudget: current.get("minimumFixedBudget"),
       blacklistedPhrases: current.get("blacklistedPhrases"),
+      offPlatformPhrases: current.get("offPlatformPhrases"),
       weights: {
         match: current.get("weightMatch"),
         clientQuality: current.get("weightClient"),
@@ -204,6 +210,173 @@
         apiKey: current.get("apiKey")
       }
     });
+  }
+
+  function initTagEditors() {
+    document.querySelectorAll("[data-tag-editor]").forEach((editor) => {
+      const name = editor.getAttribute("data-tag-editor");
+      const list = editor.querySelector("[data-tag-list]");
+      const input = editor.querySelector("[data-tag-input]");
+      const hidden = form.elements[name];
+      if (!name || !list || !input || !hidden) return;
+
+      const state = {
+        name,
+        editor,
+        list,
+        input,
+        hidden,
+        values: [],
+        pendingBackspaceDelete: false
+      };
+      tagEditors.set(name, state);
+
+      editor.addEventListener("click", () => input.focus());
+      input.addEventListener("keydown", (event) =>
+        handleTagInputKeydown(event, state)
+      );
+      input.addEventListener("input", () => handleTagInput(state));
+      input.addEventListener("blur", () => commitTagInput(state));
+    });
+  }
+
+  function handleTagInputKeydown(event, state) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitTagInput(state);
+      return;
+    }
+
+    if (event.key === "," || event.key === "\uFF0C") {
+      event.preventDefault();
+      commitTagInput(state);
+      return;
+    }
+
+    if (event.key === "Backspace" && !state.input.value) {
+      if (!state.values.length) return;
+      event.preventDefault();
+      if (state.pendingBackspaceDelete) {
+        state.values.pop();
+        state.pendingBackspaceDelete = false;
+      } else {
+        state.pendingBackspaceDelete = true;
+      }
+      renderTagEditor(state);
+      return;
+    }
+
+    state.pendingBackspaceDelete = false;
+    renderTagEditor(state);
+  }
+
+  function handleTagInput(state) {
+    state.pendingBackspaceDelete = false;
+    if (!/[\n,\uFF0C]/.test(state.input.value)) {
+      renderTagEditor(state);
+      return;
+    }
+
+    const parts = state.input.value.split(/[\n,\uFF0C]/);
+    parts.slice(0, -1).forEach((part) => addTag(state, part));
+    state.input.value = parts[parts.length - 1] || "";
+    renderTagEditor(state);
+  }
+
+  function commitTagInput(state) {
+    addTag(state, state.input.value);
+    state.input.value = "";
+    state.pendingBackspaceDelete = false;
+    renderTagEditor(state);
+  }
+
+  function addTag(state, value) {
+    const tag = String(value || "").trim();
+    if (!tag) return;
+    const exists = state.values.some(
+      (item) => item.toLowerCase() === tag.toLowerCase()
+    );
+    if (!exists) state.values.push(tag);
+  }
+
+  function removeTag(state, index) {
+    state.values.splice(index, 1);
+    state.pendingBackspaceDelete = false;
+    renderTagEditor(state);
+    state.input.focus();
+  }
+
+  function setTagEditorValue(name, values) {
+    const state = tagEditors.get(name);
+    if (!state) {
+      if (form.elements[name]) {
+        form.elements[name].value = UWE.arrayFromValue(values).join("\n");
+      }
+      return;
+    }
+    state.values = UWE.arrayFromValue(values);
+    state.input.value = "";
+    state.pendingBackspaceDelete = false;
+    renderTagEditor(state);
+  }
+
+  function syncTagEditors() {
+    tagEditors.forEach((state) => {
+      commitTagInput(state);
+    });
+  }
+
+  function renderTagEditor(state) {
+    state.hidden.value = state.values.join("\n");
+    state.list.textContent = "";
+    state.values.forEach((value, index) => {
+      const tag = document.createElement("span");
+      tag.className = "tag-editor__tag";
+      if (
+        state.pendingBackspaceDelete &&
+        index === state.values.length - 1 &&
+        !state.input.value
+      ) {
+        tag.classList.add("is-pending-delete");
+      }
+
+      const label = document.createElement("span");
+      label.className = "tag-editor__label";
+      label.textContent = value;
+
+      const remove = document.createElement("button");
+      remove.className = "tag-editor__remove";
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${value}`);
+      remove.textContent = "x";
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeTag(state, index);
+      });
+
+      tag.append(label, remove);
+      state.list.append(tag);
+    });
+    scheduleTagEditorRows(state);
+  }
+
+  function scheduleTagEditorRows(state) {
+    const schedule = root.requestAnimationFrame || root.setTimeout;
+    schedule(() => updateTagEditorRows(state), 0);
+  }
+
+  function updateTagEditorRows(state) {
+    const items = [...Array.from(state.list.children), state.input];
+    const rowTops = new Set(
+      items
+        .filter((item) => item && item.offsetParent !== null)
+        .map((item) => Math.round(item.offsetTop))
+    );
+    const neededRows = Math.max(TAG_EDITOR_ROW_STEP, rowTops.size || 1);
+    const visibleRows =
+      Math.ceil(neededRows / TAG_EDITOR_ROW_STEP) * TAG_EDITOR_ROW_STEP;
+    state.editor.style.setProperty("--tag-editor-rows", String(visibleRows));
   }
 
   async function requestApiPermission(next) {

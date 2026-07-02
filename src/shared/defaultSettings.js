@@ -16,6 +16,7 @@
       overview: "",
       hourlyRate: "",
       skills: [],
+      portfolio: [],
       languages: [],
       location: "",
       profileUrl: "",
@@ -44,11 +45,9 @@
     blacklistedPhrases: [
       "unpaid test",
       "free sample",
-      "outside upwork",
-      "telegram",
-      "whatsapp",
       "commission only"
     ],
+    offPlatformPhrases: ["outside upwork"],
     weights: {
       match: 0.35,
       clientQuality: 0.25,
@@ -90,6 +89,33 @@
   function numberOrDefault(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function phraseKey(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function normalizeBlacklistedPhrases(source, defaults, has) {
+    const phrases = arrayFromValue(
+      has("blacklistedPhrases")
+        ? source.blacklistedPhrases
+        : defaults.blacklistedPhrases
+    );
+    if (!has("blacklistedPhrases") || has("offPlatformPhrases")) {
+      return phrases;
+    }
+
+    const legacyOffPlatformPhrases = new Set([
+      "outside upwork",
+      "telegram",
+      "whatsapp"
+    ]);
+    return phrases.filter(
+      (phrase) => !legacyOffPlatformPhrases.has(phraseKey(phrase))
+    );
   }
 
   function normalizeProfileUrl(value) {
@@ -180,10 +206,11 @@
         source.minimumFixedBudget,
         defaults.minimumFixedBudget
       ),
-      blacklistedPhrases: arrayFromValue(
-        has("blacklistedPhrases")
-          ? source.blacklistedPhrases
-          : defaults.blacklistedPhrases
+      blacklistedPhrases: normalizeBlacklistedPhrases(source, defaults, has),
+      offPlatformPhrases: arrayFromValue(
+        has("offPlatformPhrases")
+          ? source.offPlatformPhrases
+          : defaults.offPlatformPhrases
       ),
       weights: normalizeWeights(source.weights || defaults.weights),
       thresholds: {
@@ -219,11 +246,34 @@
       overview: String(source.overview || ""),
       hourlyRate: String(source.hourlyRate || ""),
       skills: arrayFromValue(source.skills || []),
+      portfolio: normalizePortfolio(source.portfolio),
       languages: arrayFromValue(source.languages || []),
       location: String(source.location || ""),
       profileUrl: normalizeProfileUrl(source.profileUrl),
       updatedAt: String(source.updatedAt || "")
     };
+  }
+
+  function normalizePortfolio(input) {
+    if (!Array.isArray(input)) return [];
+    return input
+      .map((item) => {
+        if (typeof item === "string") {
+          return {
+            title: item.trim(),
+            description: "",
+            skills: []
+          };
+        }
+        const source = item && typeof item === "object" ? item : {};
+        return {
+          title: String(source.title || "").trim(),
+          description: String(source.description || "").trim(),
+          skills: arrayFromValue(source.skills || [])
+        };
+      })
+      .filter((item) => item.title || item.description || item.skills.length)
+      .slice(0, 20);
   }
 
   function profileSummaryFromSnapshot(input) {
@@ -240,6 +290,15 @@
     }
     if (profile.skills.length) {
       parts.push(`Skills: ${profile.skills.join(", ")}`);
+    }
+    if (profile.portfolio.length) {
+      parts.push(
+        `Portfolio: ${profile.portfolio
+          .map((item) => item.title || item.description)
+          .filter(Boolean)
+          .slice(0, 8)
+          .join("; ")}`
+      );
     }
     if (profile.languages.length) {
       parts.push(`Languages: ${profile.languages.join(", ")}`);

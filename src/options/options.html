@@ -76,19 +76,68 @@
         <section class="settings-grid">
           <label class="field">
             <span data-i18n="options.preferredSkills">Preferred skills</span>
-            <textarea name="preferredSkills" rows="5"></textarea>
+            <input type="hidden" name="preferredSkills" />
+            <div class="tag-editor" data-tag-editor="preferredSkills">
+              <div class="tag-editor__tags" data-tag-list></div>
+              <input
+                class="tag-editor__input"
+                type="text"
+                autocomplete="off"
+                data-tag-input
+              />
+            </div>
           </label>
           <label class="field">
             <span data-i18n="options.avoidedSkills">Avoided skills or categories</span>
-            <textarea name="avoidedSkills" rows="5"></textarea>
+            <input type="hidden" name="avoidedSkills" />
+            <div class="tag-editor" data-tag-editor="avoidedSkills">
+              <div class="tag-editor__tags" data-tag-list></div>
+              <input
+                class="tag-editor__input"
+                type="text"
+                autocomplete="off"
+                data-tag-input
+              />
+            </div>
           </label>
           <label class="field">
             <span data-i18n="options.projectTypes">Preferred project types</span>
-            <textarea name="preferredProjectTypes" rows="5"></textarea>
+            <input type="hidden" name="preferredProjectTypes" />
+            <div class="tag-editor" data-tag-editor="preferredProjectTypes">
+              <div class="tag-editor__tags" data-tag-list></div>
+              <input
+                class="tag-editor__input"
+                type="text"
+                autocomplete="off"
+                data-tag-input
+              />
+            </div>
           </label>
           <label class="field">
             <span data-i18n="options.blacklistedPhrases">Blacklisted phrases</span>
-            <textarea name="blacklistedPhrases" rows="5"></textarea>
+            <input type="hidden" name="blacklistedPhrases" />
+            <div class="tag-editor" data-tag-editor="blacklistedPhrases">
+              <div class="tag-editor__tags" data-tag-list></div>
+              <input
+                class="tag-editor__input"
+                type="text"
+                autocomplete="off"
+                data-tag-input
+              />
+            </div>
+          </label>
+          <label class="field">
+            <span data-i18n="options.offPlatformPhrases">Off-platform risk phrases</span>
+            <input type="hidden" name="offPlatformPhrases" />
+            <div class="tag-editor" data-tag-editor="offPlatformPhrases">
+              <div class="tag-editor__tags" data-tag-list></div>
+              <input
+                class="tag-editor__input"
+                type="text"
+                autocomplete="off"
+                data-tag-input
+              />
+            </div>
           </label>
         </section>
 

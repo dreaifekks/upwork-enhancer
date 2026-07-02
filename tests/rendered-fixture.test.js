@@ -54,7 +54,7 @@ test("renders score context labels for job cards and client history", (t) => {
       result.stderr || result.stdout || "Chrome fixture render failed"
     );
     assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
-    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.13"/);
+    assert.match(result.stdout, /data-uwe-content-script-version="0\.1\.15"/);
     assert.match(result.stdout, /class="uwe-sidebar[^"]*"/);
     assert.match(
       result.stdout,
@@ -227,6 +227,7 @@ test("parses visible freelancer profile data", (t) => {
     assert.match(result.stdout, /Node\.js\/React Full-Stack Developer/);
     assert.match(result.stdout, /\$30\.00\/hr/);
     assert.match(result.stdout, /OpenAI API/);
+    assert.match(result.stdout, /AI customer support chatbot/);
     assert.match(result.stdout, /Chinese: Native or Bilingual/);
   } finally {
     rmSync(profileDir, { recursive: true, force: true });

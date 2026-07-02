@@ -626,6 +626,50 @@
       .slice(0, 10);
   }
 
+  function parseProfilePortfolio(rootNode) {
+    const containers = Array.from(
+      rootNode.querySelectorAll(
+        "[data-test*='portfolio'], [data-test*='project-catalog'], section"
+      )
+    ).filter((element) => {
+      const text = textOf(element).slice(0, 180);
+      return /portfolio|project catalog/i.test(text);
+    });
+    const items = [];
+    const seen = new Set();
+
+    containers.forEach((container) => {
+      const candidates = Array.from(
+        container.querySelectorAll(
+          "[data-test*='portfolio-item'], [data-test*='project'], article, li"
+        )
+      ).filter((element) => element !== container);
+      const itemNodes = candidates.length ? candidates : [container];
+
+      itemNodes.forEach((item) => {
+        const title = firstText(item, [
+          "h3",
+          "h4",
+          "h5",
+          "a[href]",
+          "[data-test*='title']"
+        ]);
+        const description = textOf(item);
+        const key = cleanText([title, description].join(" ")).slice(0, 180);
+        if (!key || seen.has(key)) return;
+        if (!/portfolio|project catalog/i.test(description) && !title) return;
+        seen.add(key);
+        items.push({
+          title: title || cleanText(description).slice(0, 80),
+          description: cleanText(description).slice(0, 1200),
+          skills: parseSkills(item).slice(0, 12)
+        });
+      });
+    });
+
+    return items.slice(0, 12);
+  }
+
   function parseProfileLocation(fullText) {
     const match = fullText.match(
       /([A-Z][A-Za-z\s.'-]+,\s*[A-Z][A-Za-z\s.'-]+)\s*[–-]\s*\d{1,2}:\d{2}/
@@ -665,6 +709,7 @@
       overview,
       hourlyRate: cleanText(hourlyRate),
       skills: parseSkills(rootNode).slice(0, 30),
+      portfolio: parseProfilePortfolio(rootNode),
       languages: parseProfileLanguages(fullText),
       location: parseProfileLocation(fullText),
       profileUrl: documentUrl(doc),
