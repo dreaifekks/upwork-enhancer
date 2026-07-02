@@ -2,6 +2,7 @@
   "name": "upwork-enhancer",
   "version": "0.1.15",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Chrome extension for evaluating Upwork opportunities while browsing.",
   "scripts": {
     "validate": "node scripts/validate-extension.mjs",

@@ -96,3 +96,7 @@ Before publishing a release, verify:
 - [MVP requirements and build plan](docs/MVP_REQUIREMENTS.md)
 - [Chrome Web Store release checklist](docs/CHROME_WEB_STORE_RELEASE.md)
 - [Privacy policy](docs/PRIVACY_POLICY.md)
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
