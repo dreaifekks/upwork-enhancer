@@ -1,78 +1,98 @@
 # Upwork Enhancer
 
-Chrome extension for evaluating Upwork opportunities while browsing.
+Upwork Enhancer is a Manifest V3 Chrome extension that helps freelancers evaluate Upwork opportunities while browsing Upwork.
 
-The first goal is not full automation. The extension should help a freelancer make faster and better application decisions by showing strategy-driven evaluation directly on Upwork job pages.
+It adds local scoring badges to job cards, shows an opportunity review panel on job detail pages, and optionally uses a user-configured OpenAI-compatible API for additional analysis.
 
-## Current Direction
+This is an unofficial extension and is not affiliated with, endorsed by, or sponsored by Upwork.
 
-- Build a Chrome extension first, not an MCP server.
-- Enhance the existing Upwork browsing flow instead of replacing it.
-- Show evaluation overlays on job list and job detail pages.
-- Keep deterministic scoring local where the strategy is already clear.
-- Use an OpenAI-compatible remote API only for fuzzy analysis and writing assistance.
-- Avoid automatic applying, background scraping, credential proxying, or bulk page collection.
+![Opportunity review screenshot](assets/store/screenshots/02-real-opportunity-review.png)
 
-## MVP
+## Features
 
-1. Read visible job information from the current Upwork page.
-2. Score the job with local rules:
-   - freelancer match
-   - client quality
-   - competition level
-   - risk level
-   - recommended action
-3. Render compact badges on job cards.
-4. Render a detail sidebar on job detail pages.
-5. Optionally call an OpenAI-compatible API for:
-   - requirement summary
-   - ambiguous risk interpretation
-   - proposal angle
-   - draft proposal opener
-6. Save only local decision metadata, such as job id, scores, tags, and user decision.
+- Scores visible Upwork jobs by match, client quality, competition, and risk.
+- Adds compact action badges such as `Apply`, `Watch`, `Maybe`, and `Pass`.
+- Shows a detail review panel with score breakdowns, reasons, risk notes, and saved decisions.
+- Imports a visible freelancer profile into local matching preferences.
+- Saves settings and decision metadata locally in browser storage.
+- Supports English and Chinese extension UI text.
+- Offers optional AI analysis through a user-provided API endpoint and API key.
 
-## Local Development
+## Privacy And Scope
 
-This repository is currently a no-build Manifest V3 extension.
+The extension is designed to assist browsing decisions, not automate Upwork activity.
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Click "Load unpacked".
-4. Select this repository directory.
-5. Open an Upwork job list or job detail page.
+- It does not submit proposals automatically.
+- It does not click through Upwork workflows automatically.
+- It does not collect Upwork passwords.
+- It does not proxy Upwork sessions.
+- It does not crawl Upwork pages in the background.
+- It does not send data to the developer's own server.
 
-Useful checks:
+When optional AI is enabled, visible job context may be sent to the API endpoint configured by the user. See [Privacy Policy](docs/PRIVACY_POLICY.md) for details.
+
+## Install For Local Testing
+
+This repository is currently a no-build extension.
+
+1. Download or clone this repository.
+2. Open `chrome://extensions`.
+3. Enable Developer mode.
+4. Click `Load unpacked`.
+5. Select the repository folder.
+6. Open an Upwork job list or job detail page.
+
+The latest packaged zip is available on the [GitHub Releases page](https://github.com/dreaifekks/upwork-enhancer/releases).
+
+## Development
+
+Requirements:
+
+- Node.js 20 or newer
+- Chrome or Chromium for manual extension testing
+- ImageMagick for preparing store screenshots
+
+Useful commands:
 
 ```bash
 npm run check
+npm run package:extension
+npm run screenshots:store
 ```
 
-The extension can also be previewed against the local mock page at `tests/fixtures/mock-upwork.html`.
+`npm run package:extension` creates a Chrome upload zip in:
 
-Manual QA checklist:
+```text
+dist/chrome/
+```
 
-- Upwork job list pages show compact score/action badges on visible job cards.
-- Upwork job detail pages show the opportunity review panel.
-- Injected score badges start with a context label, such as `Job`, `History`, or `Client job`, so client-history scores are not confused with the current job.
-- Client history scoring is applied to the latest visible history entries, up to 10 items. After clicking Upwork's `View more`, the extension should rescan the newly visible entries.
-- Clicking the extension icon opens a quick settings popup for language, opening/importing/updating your profile, common preferences, and AI connection testing.
-- Open your own Upwork freelancer profile page and use `Import current profile` to initialize the profile summary and merge profile skills into matching preferences. If you store a profile URL in settings, `Open profile` opens that profile first so you can import it from the visible tab.
-- The panel can be collapsed and does not cover the main job title on laptop-width screens.
+`npm run screenshots:store` converts real raw screenshots from:
+
+```text
+assets/store/raw/
+```
+
+into Chrome Web Store-compatible PNG files in:
+
+```text
+assets/store/screenshots/
+```
+
+## Manual QA
+
+Before publishing a release, verify:
+
+- Job list pages show score/action badges on visible job cards.
+- Job detail pages show the opportunity review panel.
+- The review panel can be collapsed and does not cover the main job title on laptop-width screens.
 - Saving a decision persists the selected action, note, and tags locally.
-- Options default to English and can switch extension-owned UI text to Chinese.
-- Saving options updates already-open Upwork tabs without requiring a manual refresh.
+- Options can switch extension-owned UI text between English and Chinese.
+- Updating settings refreshes already-open Upwork tabs without a manual page reload.
 - The extension still works when AI settings are empty or disabled.
-
-## Non-Goals For The First Version
-
-- No automatic proposal submission.
-- No automatic clicking or Upwork workflow automation.
-- No background crawling of search result pages.
-- No password collection or session proxying.
-- No long-term storage of full Upwork job content unless the policy boundary is rechecked.
-- No MCP interface until the browsing workflow and scoring strategy are stable.
 
 ## Project Docs
 
 - [Product goals](docs/PRODUCT_GOALS.md)
 - [MVP requirements and build plan](docs/MVP_REQUIREMENTS.md)
+- [Chrome Web Store release checklist](docs/CHROME_WEB_STORE_RELEASE.md)
+- [Privacy policy](docs/PRIVACY_POLICY.md)
