@@ -21,12 +21,20 @@ for (const key of requiredTopLevel) {
 }
 
 assert(manifest.manifest_version === 3, "manifest_version must be 3");
+assert(
+  manifest.description.length <= 132,
+  "manifest description must be 132 characters or fewer"
+);
 
 await assertFile(manifest.background.service_worker);
 jsFiles.add(resolve(root, manifest.background.service_worker));
 await assertFile(manifest.options_page);
 if (manifest.action && manifest.action.default_popup) {
   await assertFile(manifest.action.default_popup);
+}
+await assertIconMap(manifest.icons, "manifest.icons");
+if (manifest.action && manifest.action.default_icon) {
+  await assertIconMap(manifest.action.default_icon, "action.default_icon");
 }
 
 for (const script of manifest.content_scripts || []) {
@@ -90,6 +98,14 @@ async function collectHtmlAssets(htmlPath, jsFiles) {
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
+  }
+}
+
+async function assertIconMap(iconMap, label) {
+  assert(iconMap && typeof iconMap === "object", `${label} is required`);
+  for (const size of ["16", "32", "48", "128"]) {
+    assert(iconMap[size], `${label} is missing ${size}px icon`);
+    await assertFile(iconMap[size]);
   }
 }
 
