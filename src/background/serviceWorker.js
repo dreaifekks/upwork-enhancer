@@ -192,48 +192,72 @@ async function analyzeWithAi(job, score) {
     return { ok: false, error: "AI is not configured" };
   }
 
-  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const prompt = buildPrompt(job, score, settings);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${settings.api.apiKey}`
-    },
-    body: JSON.stringify({
-      model: settings.api.model,
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a concise Upwork opportunity analyst. Focus on fit, risks, and proposal angle. Do not suggest off-platform behavior."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    return {
-      ok: false,
-      error: `AI request failed: ${response.status} ${text.slice(0, 160)}`
-    };
+  try {
+    return await requestAiAnalysis(settings, buildPrompt(job, score, settings));
+  } catch (firstError) {
+    try {
+      return await requestAiAnalysis(
+        settings,
+        buildPrompt(job, score, settings, { compact: true })
+      );
+    } catch (secondError) {
+      return {
+        ok: false,
+        error: `AI request failed: ${messageFromError(secondError || firstError)}`
+      };
+    }
   }
+}
 
-  const payload = await response.json();
-  const text =
-    payload &&
-    payload.choices &&
-    payload.choices[0] &&
-    payload.choices[0].message &&
-    payload.choices[0].message.content;
+async function requestAiAnalysis(settings, prompt) {
+  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
 
-  return { ok: true, text: String(text || "").trim() };
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${settings.api.apiKey}`
+      },
+      body: JSON.stringify({
+        model: settings.api.model,
+        temperature: 0.3,
+        max_tokens: 900,
+        stream: false,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a concise Upwork opportunity analyst. Focus on fit, risks, and proposal angle. Do not suggest off-platform behavior. Return Markdown."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`${response.status} ${text.slice(0, 160)}`);
+    }
+
+    const payload = await response.json();
+    const text =
+      payload &&
+      payload.choices &&
+      payload.choices[0] &&
+      payload.choices[0].message &&
+      payload.choices[0].message.content;
+
+    return { ok: true, text: String(text || "").trim() };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function testAiConfig() {
@@ -302,11 +326,18 @@ function isAiConfigured(settings) {
   );
 }
 
-function buildPrompt(job, score, settings) {
+function messageFromError(error) {
+  if (!error) return "Unknown error";
+  if (error.name === "AbortError") return "request timed out";
+  return error.message || String(error);
+}
+
+function buildPrompt(job, score, settings, options = {}) {
+  const descriptionLimit = options.compact ? 1800 : 3600;
   const safeJob = {
     title: job && job.title,
-    description: job && String(job.description || "").slice(0, 6000),
-    skills: job && job.skills,
+    description: job && String(job.description || "").slice(0, descriptionLimit),
+    skills: job && Array.isArray(job.skills) ? job.skills.slice(0, 24) : [],
     budgetType: job && job.budgetType,
     hourlyMin: job && job.hourlyMin,
     hourlyMax: job && job.hourlyMax,
@@ -315,7 +346,22 @@ function buildPrompt(job, score, settings) {
     proposalCount: job && job.proposalCount,
     clientPaymentVerified: job && job.clientPaymentVerified,
     clientRating: job && job.clientRating,
-    clientSpend: job && job.clientSpend
+    clientSpend: job && job.clientSpend,
+    clientHireRate: job && job.clientHireRate,
+    clientAverageHourlyRate: job && job.clientAverageHourlyRate
+  };
+  const safeScore = {
+    overallScore: score && score.overallScore,
+    recommendedAction: score && score.recommendedAction,
+    matchScore: score && score.matchScore,
+    clientQualityScore: score && score.clientQualityScore,
+    competitionScore: score && score.competitionScore,
+    riskScore: score && score.riskScore,
+    riskLevel: score && score.riskLevel,
+    positiveReasons: score && score.positiveReasons,
+    negativeReasons: score && score.negativeReasons,
+    riskNotes: score && score.riskNotes,
+    missingSignals: score && score.missingSignals
   };
 
   return [
@@ -325,7 +371,7 @@ function buildPrompt(job, score, settings) {
     `Preferred skills: ${settings.preferredSkills.join(", ")}`,
     `Avoided skills/categories: ${settings.avoidedSkills.join(", ")}`,
     "",
-    `Local scoring result: ${JSON.stringify(score, null, 2)}`,
+    `Local scoring result: ${JSON.stringify(safeScore, null, 2)}`,
     "",
     `Job data: ${JSON.stringify(safeJob, null, 2)}`,
     "",

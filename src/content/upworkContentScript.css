@@ -231,7 +231,7 @@
 }
 
 .uwe-sidebar--floating-left {
-  width: min(328px, calc(100vw - 32px));
+  width: min(292px, calc(100vw - 44px));
 }
 
 .uwe-sidebar--inline {
@@ -241,9 +241,9 @@
   right: auto;
   bottom: auto;
   left: auto;
-  width: 100%;
+  width: calc(100% - 32px);
   max-height: none;
-  margin: 0 0 18px;
+  margin: 10px 16px 20px;
   box-shadow: none;
 }
 

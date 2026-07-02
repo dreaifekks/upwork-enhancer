@@ -86,6 +86,61 @@ test("TEST_AI_CONFIG sends the stored API key only from the service worker", asy
   );
 });
 
+test("AI_ANALYZE retries with a compact prompt after a network failure", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1/",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        },
+        profileSummary: "Full-stack React and Node developer",
+        preferredSkills: ["React", "Node.js"]
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      fetchCalls.push(JSON.parse(options.body));
+      if (fetchCalls.length === 1) {
+        throw new TypeError("Failed to fetch");
+      }
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: "## Fit\nGood match." } }]
+          };
+        }
+      };
+    }
+  });
+
+  const response = await worker.send({
+    type: "AI_ANALYZE",
+    job: {
+      title: "Build a React dashboard",
+      description: "A".repeat(5000),
+      skills: ["React", "Node.js", "PostgreSQL"]
+    },
+    score: {
+      overallScore: 82,
+      recommendedAction: "apply",
+      positiveReasons: ["Matches preferred skills"]
+    }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.text, "## Fit\nGood match.");
+  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls[0].model, "demo-model");
+  assert.equal(fetchCalls[0].messages[0].content.includes("Return Markdown"), true);
+  assert.ok(
+    fetchCalls[1].messages[1].content.length < fetchCalls[0].messages[1].content.length
+  );
+});
+
 function createServiceWorker({ initialStore = {}, fetchImpl } = {}) {
   const store = { ...initialStore };
   const backgroundDir = resolve("src/background");

@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.10";
+  const CONTENT_SCRIPT_VERSION = "0.1.11";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -371,21 +371,25 @@
       return;
     }
 
-    const gap = 14;
-    const margin = 14;
+    const gap = 18;
+    const margin = 22;
     const fallbackTop = 84;
     const mainRect = findMainContentRect();
-    const measuredWidth = sidebar.getBoundingClientRect().width || 372;
-    let sidebarWidth = Math.min(measuredWidth, 328, window.innerWidth - margin * 2);
-    const fallbackLeft = margin;
+    const measuredWidth = sidebar.getBoundingClientRect().width || 292;
+    let sidebarWidth = Math.min(measuredWidth, 292, window.innerWidth - margin * 2);
+    const fallbackLeft = clamp(
+      Math.round(window.innerWidth * 0.12),
+      margin,
+      window.innerWidth - sidebarWidth - margin
+    );
     let top = fallbackTop;
     let left = fallbackLeft;
 
     if (mainRect) {
       top = clamp(mainRect.top, 70, Math.max(70, window.innerHeight - 180));
       const availableLeft = mainRect.left - gap - margin;
-      if (availableLeft >= 240) {
-        sidebarWidth = Math.min(sidebarWidth, availableLeft);
+      if (availableLeft >= 230) {
+        sidebarWidth = Math.min(sidebarWidth, 292, availableLeft - 16);
         left = Math.max(margin, mainRect.left - sidebarWidth - gap);
       } else {
         left = clamp(
@@ -476,7 +480,7 @@
         if (
           rect.width >= Math.max(420, titleRect.width) &&
           rect.width <= 980 &&
-          rect.left >= titleRect.left - 80 &&
+          rect.left >= titleRect.left - 28 &&
           rect.left <= titleRect.left + 12 &&
           rect.height >= titleRect.height
         ) {
@@ -724,21 +728,65 @@
     aiButton.addEventListener("click", async () => {
       if (aiButton.disabled) return;
       const output = sidebar.querySelector("[data-uwe-ai-result]");
+      aiButton.disabled = true;
       status.textContent = t("sidebar.aiLoading");
-      output.hidden = true;
+      output.hidden = false;
+      output.innerHTML = `<p>${escapeHtml(t("sidebar.aiLoading"))}</p>`;
       const response = await sendMessage({
         type: "AI_ANALYZE",
-        job,
-        score: result
+        job: compactJobForAi(job),
+        score: compactScoreForAi(result)
       });
       if (response && response.ok) {
         output.hidden = false;
         output.innerHTML = renderMarkdown(response.text);
         status.textContent = t("sidebar.aiResult");
       } else {
-        status.textContent = response && response.error ? response.error : "AI failed";
+        const error = response && response.error ? response.error : "AI failed";
+        output.hidden = false;
+        output.innerHTML = `<p>${escapeHtml(error)}</p>`;
+        status.textContent = error;
       }
+      aiButton.disabled = false;
     });
+  }
+
+  function compactJobForAi(job) {
+    return {
+      jobId: job.jobId,
+      url: job.url,
+      title: job.title,
+      description: String(job.description || "").slice(0, 3600),
+      skills: Array.isArray(job.skills) ? job.skills.slice(0, 24) : [],
+      budgetType: job.budgetType,
+      hourlyMin: job.hourlyMin,
+      hourlyMax: job.hourlyMax,
+      fixedBudget: job.fixedBudget,
+      experienceLevel: job.experienceLevel,
+      proposalCount: job.proposalCount,
+      clientPaymentVerified: job.clientPaymentVerified,
+      clientRating: job.clientRating,
+      clientSpend: job.clientSpend,
+      clientHireRate: job.clientHireRate,
+      clientAverageHourlyRate: job.clientAverageHourlyRate,
+      countryOrTimezone: job.countryOrTimezone
+    };
+  }
+
+  function compactScoreForAi(result) {
+    return {
+      overallScore: result.overallScore,
+      recommendedAction: result.recommendedAction,
+      matchScore: result.matchScore,
+      clientQualityScore: result.clientQualityScore,
+      competitionScore: result.competitionScore,
+      riskScore: result.riskScore,
+      riskLevel: result.riskLevel,
+      positiveReasons: result.positiveReasons,
+      negativeReasons: result.negativeReasons,
+      riskNotes: result.riskNotes,
+      missingSignals: result.missingSignals
+    };
   }
 
   function escapeHtml(value) {
