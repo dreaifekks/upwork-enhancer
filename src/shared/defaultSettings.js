@@ -6,6 +6,7 @@
 
   const DEFAULT_SETTINGS = {
     language: "en",
+    theme: "auto",
     profileSummary: "",
     profileUrl: "",
     profileUpdatedAt: "",
@@ -153,6 +154,9 @@
       ...defaults,
       ...source,
       language: source.language === "zh" ? "zh" : "en",
+      theme: ["auto", "light", "dark"].includes(source.theme)
+        ? source.theme
+        : defaults.theme,
       profileSummary: String(source.profileSummary || ""),
       profileUrl: normalizeProfileUrl(source.profileUrl),
       profileUpdatedAt: String(source.profileUpdatedAt || ""),

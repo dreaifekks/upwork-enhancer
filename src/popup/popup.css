@@ -8,15 +8,52 @@
   --accent: #147a64;
   --accent-dark: #0f5f4f;
   --soft: #eef4f7;
+  --input: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111716;
+  --surface: #17201e;
+  --text: #edf7f3;
+  --muted: #a6b5af;
+  --border: #2c3b37;
+  --accent: #19a974;
+  --accent-dark: #66d9a9;
+  --soft: #21302c;
+  --input: #111a18;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111716;
+    --surface: #17201e;
+    --text: #edf7f3;
+    --muted: #a6b5af;
+    --border: #2c3b37;
+    --accent: #19a974;
+    --accent-dark: #66d9a9;
+    --soft: #21302c;
+    --input: #111a18;
+  }
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  width: 380px;
+  height: 600px;
+  overflow: hidden;
+}
+
 body {
   width: 380px;
+  height: 600px;
   margin: 0;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family:
@@ -27,6 +64,9 @@ body {
 .popup-shell {
   display: grid;
   gap: 10px;
+  height: 600px;
+  max-height: 600px;
+  overflow-y: auto;
   padding: 12px;
 }
 
@@ -98,7 +138,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--input);
   color: var(--text);
   font: inherit;
   font-size: 12px;
@@ -144,6 +184,12 @@ button.secondary {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+#profileStatus {
+  max-height: 58px;
+  overflow: auto;
 }
 
 #status {

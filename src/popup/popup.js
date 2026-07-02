@@ -2,6 +2,7 @@
   const UWE = root.UpworkEnhancer;
   const controls = {
     language: document.getElementById("language"),
+    theme: document.getElementById("theme"),
     preferredSkills: document.getElementById("preferredSkills"),
     avoidedSkills: document.getElementById("avoidedSkills"),
     minimumHourlyRate: document.getElementById("minimumHourlyRate"),
@@ -33,6 +34,11 @@
     controls.language.addEventListener("change", async () => {
       applyLanguage(controls.language.value);
       await savePatch({ language: controls.language.value }, false);
+    });
+
+    controls.theme.addEventListener("change", async () => {
+      applyTheme(controls.theme.value);
+      await savePatch({ theme: controls.theme.value }, false);
     });
 
     controls.save.addEventListener("click", async () => {
@@ -93,11 +99,13 @@
 
   function populate() {
     controls.language.value = settings.language;
+    controls.theme.value = settings.theme || "auto";
     controls.preferredSkills.value = settings.preferredSkills.join("\n");
     controls.avoidedSkills.value = settings.avoidedSkills.join("\n");
     controls.minimumHourlyRate.value = settings.minimumHourlyRate;
     controls.minimumFixedBudget.value = settings.minimumFixedBudget;
     applyLanguage(settings.language);
+    applyTheme(settings.theme);
     renderProfileStatus();
     renderAiStatus();
   }
@@ -105,6 +113,7 @@
   function readPatch() {
     return {
       language: controls.language.value,
+      theme: controls.theme.value,
       preferredSkills: controls.preferredSkills.value,
       avoidedSkills: controls.avoidedSkills.value,
       minimumHourlyRate: controls.minimumHourlyRate.value,
@@ -167,6 +176,15 @@
       element.textContent = UWE.t(lang, element.getAttribute("data-i18n"));
     });
     renderAiStatus();
+  }
+
+  function applyTheme(nextTheme) {
+    const theme = ["auto", "light", "dark"].includes(nextTheme) ? nextTheme : "auto";
+    if (theme === "auto") {
+      document.documentElement.removeAttribute("data-theme");
+      return;
+    }
+    document.documentElement.setAttribute("data-theme", theme);
   }
 
   function setStatus(message) {

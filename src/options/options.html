@@ -23,13 +23,23 @@
       <form id="settingsForm" class="settings-form">
         <section class="settings-section">
           <h2 data-i18n="options.language">Display language</h2>
-          <label class="field">
-            <span data-i18n="options.language">Display language</span>
-            <select name="language" id="language">
-              <option value="en" data-i18n="options.english">English</option>
-              <option value="zh" data-i18n="options.chinese">Chinese</option>
-            </select>
-          </label>
+          <div class="settings-grid settings-grid--compact">
+            <label class="field">
+              <span data-i18n="options.language">Display language</span>
+              <select name="language" id="language">
+                <option value="en" data-i18n="options.english">English</option>
+                <option value="zh" data-i18n="options.chinese">Chinese</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="options.theme">Theme</span>
+              <select name="theme" id="theme">
+                <option value="auto" data-i18n="options.themeAuto">Auto</option>
+                <option value="light" data-i18n="options.themeLight">Light</option>
+                <option value="dark" data-i18n="options.themeDark">Dark</option>
+              </select>
+            </label>
+          </div>
         </section>
 
         <section class="settings-section">

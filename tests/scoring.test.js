@@ -86,6 +86,13 @@ test("normalizes intentionally empty list settings without restoring defaults", 
   assert.deepEqual(settings.blacklistedPhrases, []);
 });
 
+test("normalizes theme setting with auto default", () => {
+  assert.equal(UWE.normalizeSettings({}).theme, "auto");
+  assert.equal(UWE.normalizeSettings({ theme: "dark" }).theme, "dark");
+  assert.equal(UWE.normalizeSettings({ theme: "light" }).theme, "light");
+  assert.equal(UWE.normalizeSettings({ theme: "solarized" }).theme, "auto");
+});
+
 test("normalizes imported profile snapshots and builds profile summary", () => {
   const settings = UWE.normalizeSettings({
     profileUrl: "/freelancers/~011",

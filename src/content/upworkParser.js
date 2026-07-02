@@ -50,9 +50,12 @@
     if (!url) return false;
     try {
       const parsed = new URL(url);
-      return /^\/jobs\/[^/?#]+/.test(parsed.pathname);
+      return /^\/jobs\/[^/?#]+/.test(parsed.pathname) || /\/details\/~[A-Za-z0-9_]+/.test(parsed.pathname);
     } catch (_) {
-      return /^https?:\/\/[^/]+\/jobs\/[^/?#]+/.test(url);
+      return (
+        /^https?:\/\/[^/]+\/jobs\/[^/?#]+/.test(url) ||
+        /^https?:\/\/[^/]+\/.+\/details\/~[A-Za-z0-9_]+/.test(url)
+      );
     }
   }
 
@@ -673,7 +676,8 @@
 
   function isLikelyDetailPage(doc) {
     const currentUrl = documentUrl(doc);
-    const urlLooksDetail = /\/jobs\//.test(currentUrl);
+    const urlLooksDetail =
+      /\/jobs\//.test(currentUrl) || /\/details\/~[A-Za-z0-9_]+/.test(currentUrl);
     const hasDetailContainer = Boolean(
       doc.querySelector("[data-test='job-details'], [data-test*='job-detail']")
     );

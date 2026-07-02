@@ -4,6 +4,7 @@
   const status = document.getElementById("status");
   const resetDefaults = document.getElementById("resetDefaults");
   const language = document.getElementById("language");
+  const theme = document.getElementById("theme");
   const importProfile = document.getElementById("importProfile");
   const openProfile = document.getElementById("openProfile");
   const profileMeta = document.getElementById("profileMeta");
@@ -94,6 +95,10 @@
     language.addEventListener("change", () => {
       applyLanguage(language.value);
     });
+
+    theme.addEventListener("change", () => {
+      applyTheme(theme.value);
+    });
   }
 
   async function sendMessage(message) {
@@ -143,6 +148,7 @@
 
   function populateForm(next) {
     form.elements.language.value = next.language;
+    form.elements.theme.value = next.theme || "auto";
     form.elements.profileSummary.value = next.profileSummary || "";
     form.elements.profileUrl.value = next.profileUrl || "";
     form.elements.preferredSkills.value = next.preferredSkills.join("\n");
@@ -169,6 +175,7 @@
     const current = new FormData(form);
     return UWE.normalizeSettings({
       language: current.get("language"),
+      theme: current.get("theme"),
       profileSummary: current.get("profileSummary"),
       profileUrl: current.get("profileUrl"),
       profileUpdatedAt: settings.profileUpdatedAt,
@@ -242,6 +249,18 @@
     document.querySelectorAll("[data-i18n]").forEach((element) => {
       element.textContent = UWE.t(lang, element.getAttribute("data-i18n"));
     });
+    applyTheme(form.elements.theme.value);
+  }
+
+  function applyTheme(nextTheme) {
+    const resolved = ["auto", "light", "dark"].includes(nextTheme)
+      ? nextTheme
+      : "auto";
+    if (resolved === "auto") {
+      document.documentElement.removeAttribute("data-theme");
+      return;
+    }
+    document.documentElement.setAttribute("data-theme", resolved);
   }
 
   function setStatus(message) {

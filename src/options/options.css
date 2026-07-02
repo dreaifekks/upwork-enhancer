@@ -7,6 +7,36 @@
   --border: #dbe3ef;
   --accent: #0f766e;
   --accent-dark: #115e59;
+  --input: #ffffff;
+  --soft: #f8fafc;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101715;
+  --surface: #16201d;
+  --text: #edf7f3;
+  --muted: #a8b7b0;
+  --border: #2b3a36;
+  --accent: #19a974;
+  --accent-dark: #66d9a9;
+  --input: #111a18;
+  --soft: #1e2c28;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101715;
+    --surface: #16201d;
+    --text: #edf7f3;
+    --muted: #a8b7b0;
+    --border: #2b3a36;
+    --accent: #19a974;
+    --accent-dark: #66d9a9;
+    --input: #111a18;
+    --soft: #1e2c28;
+  }
 }
 
 * {
@@ -75,6 +105,12 @@ p {
   gap: 16px;
 }
 
+.settings-section > .settings-grid {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .settings-grid--compact {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -115,7 +151,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--input);
   color: var(--text);
   font: inherit;
   font-size: 14px;
@@ -150,7 +186,7 @@ button {
 #resetDefaults,
 .secondary-button {
   border-color: var(--border);
-  background: #ffffff;
+  background: var(--soft);
   color: var(--text);
 }
 

@@ -16,13 +16,23 @@
       </header>
 
       <section class="popup-section">
-        <label class="field">
-          <span data-i18n="popup.language">Language</span>
-          <select id="language">
-            <option value="en" data-i18n="options.english">English</option>
-            <option value="zh" data-i18n="options.chinese">Chinese</option>
-          </select>
-        </label>
+        <div class="field-grid">
+          <label class="field">
+            <span data-i18n="popup.language">Language</span>
+            <select id="language">
+              <option value="en" data-i18n="options.english">English</option>
+              <option value="zh" data-i18n="options.chinese">Chinese</option>
+            </select>
+          </label>
+          <label class="field">
+            <span data-i18n="popup.theme">Theme</span>
+            <select id="theme">
+              <option value="auto" data-i18n="options.themeAuto">Auto</option>
+              <option value="light" data-i18n="options.themeLight">Light</option>
+              <option value="dark" data-i18n="options.themeDark">Dark</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       <section class="popup-section">
