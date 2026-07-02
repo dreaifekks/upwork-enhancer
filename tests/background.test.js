@@ -141,13 +141,127 @@ test("AI_ANALYZE retries with a compact prompt after a network failure", async (
   );
 });
 
-function createServiceWorker({ initialStore = {}, fetchImpl } = {}) {
+test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async () => {
+  const fetchCalls = [];
+  const streamMessages = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1/",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        },
+        profileSummary: "Full-stack React and Node developer",
+        preferredSkills: ["React", "Node.js"]
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      fetchCalls.push(JSON.parse(options.body));
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"## Fit\\n"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"Good match."}}]}\n\n',
+        "data: [DONE]\n\n"
+      ]);
+    },
+    tabSendMessageImpl: async (tabId, message, options) => {
+      streamMessages.push({ tabId, message, options });
+      return null;
+    }
+  });
+
+  const response = await worker.send(
+    {
+      type: "AI_ANALYZE_STREAM",
+      requestId: "request-1",
+      job: {
+        title: "Build a React dashboard",
+        description: "Need streaming UI",
+        skills: ["React", "Node.js"]
+      },
+      score: {
+        overallScore: 82,
+        recommendedAction: "apply",
+        positiveReasons: ["Matches preferred skills"]
+      }
+    },
+    { tab: { id: 42 }, frameId: 7 }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.text, "## Fit\nGood match.");
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].stream, true);
+  assert.equal(fetchCalls[0].model, "demo-model");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(streamMessages.map((item) => item.message))),
+    [
+      {
+        type: "AI_ANALYZE_STREAM_EVENT",
+        requestId: "request-1",
+        delta: "## Fit\n"
+      },
+      {
+        type: "AI_ANALYZE_STREAM_EVENT",
+        requestId: "request-1",
+        delta: "Good match."
+      },
+      {
+        type: "AI_ANALYZE_STREAM_EVENT",
+        requestId: "request-1",
+        text: "## Fit\nGood match.",
+        done: true
+      }
+    ]
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(streamMessages.map((item) => [item.tabId, item.options]))),
+    [
+      [42, { frameId: 7 }],
+      [42, { frameId: 7 }],
+      [42, { frameId: 7 }]
+    ]
+  );
+});
+
+function streamResponse(chunks) {
+  const encoder = new TextEncoder();
+  return {
+    ok: true,
+    body: {
+      getReader() {
+        let index = 0;
+        return {
+          async read() {
+            if (index >= chunks.length) {
+              return { done: true };
+            }
+            const value = encoder.encode(chunks[index]);
+            index += 1;
+            return { done: false, value };
+          }
+        };
+      }
+    },
+    async json() {
+      return { choices: [{ message: { content: chunks.join("") } }] };
+    }
+  };
+}
+
+function createServiceWorker({
+  initialStore = {},
+  fetchImpl,
+  tabSendMessageImpl
+} = {}) {
   const store = { ...initialStore };
   const backgroundDir = resolve("src/background");
   let messageListener = null;
 
   const context = {
     AbortController,
+    TextDecoder,
     URL,
     clearTimeout,
     console,
@@ -181,7 +295,10 @@ function createServiceWorker({ initialStore = {}, fetchImpl } = {}) {
         async query() {
           return [];
         },
-        async sendMessage() {
+        async sendMessage(tabId, message, options) {
+          if (tabSendMessageImpl) {
+            return tabSendMessageImpl(tabId, message, options);
+          }
           return null;
         }
       }
@@ -208,9 +325,9 @@ function createServiceWorker({ initialStore = {}, fetchImpl } = {}) {
 
   return {
     store,
-    send(message) {
+    send(message, sender = {}) {
       return new Promise((resolveResponse) => {
-        messageListener(message, {}, resolveResponse);
+        messageListener(message, sender, resolveResponse);
       });
     }
   };

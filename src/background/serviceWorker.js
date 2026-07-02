@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-async function handleMessage(message) {
+async function handleMessage(message, sender) {
   switch (message && message.type) {
     case "GET_PUBLIC_SETTINGS": {
       const settings = await loadSettings();
@@ -52,6 +52,9 @@ async function handleMessage(message) {
     }
     case "AI_ANALYZE": {
       return await analyzeWithAi(message.job, message.score);
+    }
+    case "AI_ANALYZE_STREAM": {
+      return await analyzeWithAiStream(message, sender);
     }
     case "TEST_AI_CONFIG": {
       return await testAiConfig();
@@ -209,6 +212,38 @@ async function analyzeWithAi(job, score) {
   }
 }
 
+async function analyzeWithAiStream(message, sender) {
+  const settings = await loadSettings();
+  const requestId = String((message && message.requestId) || "");
+  if (!isAiConfigured(settings)) {
+    const error = "AI is not configured";
+    await sendAiStreamEvent(sender, requestId, { error, done: true });
+    return { ok: false, error };
+  }
+
+  try {
+    return await requestAiAnalysisStream(
+      settings,
+      buildPrompt(message.job, message.score, settings),
+      sender,
+      requestId
+    );
+  } catch (firstError) {
+    try {
+      return await requestAiAnalysisStream(
+        settings,
+        buildPrompt(message.job, message.score, settings, { compact: true }),
+        sender,
+        requestId
+      );
+    } catch (secondError) {
+      const error = `AI request failed: ${messageFromError(secondError || firstError)}`;
+      await sendAiStreamEvent(sender, requestId, { error, done: true });
+      return { ok: false, error };
+    }
+  }
+}
+
 async function requestAiAnalysis(settings, prompt) {
   const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const controller = new AbortController();
@@ -257,6 +292,157 @@ async function requestAiAnalysis(settings, prompt) {
     return { ok: true, text: String(text || "").trim() };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
+  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${settings.api.apiKey}`
+      },
+      body: JSON.stringify({
+        model: settings.api.model,
+        temperature: 0.3,
+        max_tokens: 900,
+        stream: true,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a concise Upwork opportunity analyst. Focus on fit, risks, and proposal angle. Do not suggest off-platform behavior. Return Markdown."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`${response.status} ${text.slice(0, 160)}`);
+    }
+
+    if (!response.body || !response.body.getReader) {
+      const payload = await response.json();
+      const text = extractAiText(payload);
+      await sendAiStreamEvent(sender, requestId, { text, done: true });
+      return { ok: true, text };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let text = "";
+
+    const consumeRecord = async (record) => {
+      const deltas = parseSseRecord(record);
+      for (const delta of deltas) {
+        text += delta;
+        await sendAiStreamEvent(sender, requestId, { delta });
+      }
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const records = buffer.split(/(?:\r?\n){2}/);
+      buffer = records.pop() || "";
+      for (const record of records) {
+        await consumeRecord(record);
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      await consumeRecord(buffer);
+    }
+
+    text = text.trim();
+    await sendAiStreamEvent(sender, requestId, { text, done: true });
+    return { ok: true, text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractAiText(payload) {
+  const text =
+    payload &&
+    payload.choices &&
+    payload.choices[0] &&
+    payload.choices[0].message &&
+    payload.choices[0].message.content;
+  return String(text || "").trim();
+}
+
+function parseSseRecord(record) {
+  const deltas = [];
+  String(record || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      if (!/^data:/i.test(line)) return;
+      const data = line.replace(/^data:\s*/i, "");
+      if (!data || data === "[DONE]") return;
+      let payload;
+      try {
+        payload = JSON.parse(data);
+      } catch (_) {
+        return;
+      }
+      const choice = payload && payload.choices && payload.choices[0];
+      const delta =
+        (choice &&
+          choice.delta &&
+          typeof choice.delta.content === "string" &&
+          choice.delta.content) ||
+        (choice &&
+          choice.message &&
+          typeof choice.message.content === "string" &&
+          choice.message.content) ||
+        (choice && typeof choice.text === "string" && choice.text) ||
+        "";
+      if (delta) deltas.push(delta);
+    });
+  return deltas;
+}
+
+async function sendAiStreamEvent(sender, requestId, event) {
+  if (
+    !requestId ||
+    !sender ||
+    !sender.tab ||
+    !sender.tab.id ||
+    !chrome.tabs ||
+    !chrome.tabs.sendMessage
+  ) {
+    return;
+  }
+
+  try {
+    const options =
+      typeof sender.frameId === "number" ? { frameId: sender.frameId } : undefined;
+    await chrome.tabs.sendMessage(
+      sender.tab.id,
+      {
+        type: "AI_ANALYZE_STREAM_EVENT",
+        requestId,
+        ...event
+      },
+      options
+    );
+  } catch (_) {
+    // The content script may have navigated while the request was streaming.
   }
 }
 

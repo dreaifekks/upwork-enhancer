@@ -231,7 +231,7 @@
 }
 
 .uwe-sidebar--floating-left {
-  width: min(292px, calc(100vw - 44px));
+  width: min(360px, calc(100vw - 44px));
 }
 
 .uwe-sidebar--inline {

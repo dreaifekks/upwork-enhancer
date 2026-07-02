@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.11";
+  const CONTENT_SCRIPT_VERSION = "0.1.12";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -12,6 +12,7 @@
   let renderTimer = null;
   let currentUrl = window.location.href;
   let lastSidebarSignature = "";
+  let aiAnalysisState = null;
 
   if (document.documentElement) {
     document.documentElement.setAttribute(
@@ -121,12 +122,41 @@
     return error.message || String(error);
   }
 
+  function handleAiStreamEvent(message) {
+    if (!aiAnalysisState || message.requestId !== aiAnalysisState.requestId) {
+      return;
+    }
+
+    if (typeof message.delta === "string") {
+      aiAnalysisState.text += message.delta;
+    }
+    if (
+      typeof message.text === "string" &&
+      (message.text || !aiAnalysisState.text)
+    ) {
+      aiAnalysisState.text = message.text;
+    }
+    if (message.error) {
+      aiAnalysisState.status = "error";
+      aiAnalysisState.error = String(message.error);
+    } else if (message.done) {
+      aiAnalysisState.status = "done";
+      aiAnalysisState.error = "";
+    }
+
+    renderAiState(document.querySelector(".uwe-sidebar"));
+  }
+
   if (runtime && runtime.onMessage) {
     runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message && message.type === "SETTINGS_UPDATED" && message.settings) {
         settings = message.settings;
         invalidateRenderedScores();
         scheduleRender();
+        return false;
+      }
+      if (message && message.type === "AI_ANALYZE_STREAM_EVENT") {
+        handleAiStreamEvent(message);
         return false;
       }
       if (message && message.type === "REQUEST_PROFILE_SNAPSHOT") {
@@ -375,8 +405,8 @@
     const margin = 22;
     const fallbackTop = 84;
     const mainRect = findMainContentRect();
-    const measuredWidth = sidebar.getBoundingClientRect().width || 292;
-    let sidebarWidth = Math.min(measuredWidth, 292, window.innerWidth - margin * 2);
+    const measuredWidth = sidebar.getBoundingClientRect().width || 360;
+    let sidebarWidth = Math.min(measuredWidth, 360, window.innerWidth - margin * 2);
     const fallbackLeft = clamp(
       Math.round(window.innerWidth * 0.12),
       margin,
@@ -388,8 +418,8 @@
     if (mainRect) {
       top = clamp(mainRect.top, 70, Math.max(70, window.innerHeight - 180));
       const availableLeft = mainRect.left - gap - margin;
-      if (availableLeft >= 230) {
-        sidebarWidth = Math.min(sidebarWidth, 292, availableLeft - 16);
+      if (availableLeft >= 300) {
+        sidebarWidth = Math.min(sidebarWidth, 360, availableLeft - 16);
         left = Math.max(margin, mainRect.left - sidebarWidth - gap);
       } else {
         left = clamp(
@@ -539,8 +569,10 @@
       sidebar.contains(document.activeElement) &&
       /^(TEXTAREA|INPUT|BUTTON)$/.test(document.activeElement.tagName)
     ) {
+      sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
       applyTheme(sidebar);
       positionSidebar(sidebar);
+      renderAiState(sidebar);
       return;
     }
     lastSidebarSignature = signature;
@@ -571,10 +603,12 @@
     sidebar.classList.toggle("uwe-sidebar--collapsed", collapsed);
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
+    sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
     placeSidebar(sidebar, placement);
     applyTheme(sidebar);
     positionSidebar(sidebar);
     bindSidebarEvents(sidebar, job, result);
+    renderAiState(sidebar);
   }
 
   function sidebarTemplate(job, result, selectedAction, savedNote, savedTags) {
@@ -727,28 +761,80 @@
     const aiButton = sidebar.querySelector("[data-uwe-ai]");
     aiButton.addEventListener("click", async () => {
       if (aiButton.disabled) return;
-      const output = sidebar.querySelector("[data-uwe-ai-result]");
-      aiButton.disabled = true;
-      status.textContent = t("sidebar.aiLoading");
-      output.hidden = false;
-      output.innerHTML = `<p>${escapeHtml(t("sidebar.aiLoading"))}</p>`;
+      const state = startAiAnalysis(job, result);
+      renderAiState(sidebar);
       const response = await sendMessage({
-        type: "AI_ANALYZE",
+        type: "AI_ANALYZE_STREAM",
+        requestId: state.requestId,
         job: compactJobForAi(job),
         score: compactScoreForAi(result)
       });
+      if (!aiAnalysisState || aiAnalysisState.requestId !== state.requestId) {
+        return;
+      }
       if (response && response.ok) {
-        output.hidden = false;
-        output.innerHTML = renderMarkdown(response.text);
-        status.textContent = t("sidebar.aiResult");
+        if (!aiAnalysisState.text && response.text) {
+          aiAnalysisState.text = response.text;
+        }
+        aiAnalysisState.status = "done";
+        aiAnalysisState.error = "";
       } else {
         const error = response && response.error ? response.error : "AI failed";
-        output.hidden = false;
-        output.innerHTML = `<p>${escapeHtml(error)}</p>`;
-        status.textContent = error;
+        aiAnalysisState.status = "error";
+        aiAnalysisState.error = error;
       }
-      aiButton.disabled = false;
+      renderAiState(sidebar);
     });
+  }
+
+  function startAiAnalysis(job, result) {
+    aiAnalysisState = {
+      requestId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      jobKey: aiJobKey(job, result),
+      status: "loading",
+      text: "",
+      error: ""
+    };
+    return aiAnalysisState;
+  }
+
+  function renderAiState(sidebar) {
+    if (!sidebar) return;
+    const output = sidebar.querySelector("[data-uwe-ai-result]");
+    const status = sidebar.querySelector("[data-uwe-status]");
+    const aiButton = sidebar.querySelector("[data-uwe-ai]");
+    if (!output || !status) return;
+
+    const sidebarJobKey = sidebar.getAttribute("data-uwe-ai-job-key") || "";
+    const configured = Boolean(settings.api && settings.api.configured);
+    if (!aiAnalysisState || aiAnalysisState.jobKey !== sidebarJobKey) {
+      if (aiButton) aiButton.disabled = !configured;
+      return;
+    }
+
+    const isLoading = aiAnalysisState.status === "loading";
+    output.hidden = false;
+    if (aiButton) aiButton.disabled = !configured || isLoading;
+
+    if (aiAnalysisState.status === "error") {
+      const error = aiAnalysisState.error || "AI failed";
+      status.textContent = error;
+      output.innerHTML = `<p>${escapeHtml(error)}</p>`;
+      return;
+    }
+
+    status.textContent = isLoading ? t("sidebar.aiLoading") : t("sidebar.aiResult");
+    output.innerHTML = aiAnalysisState.text
+      ? renderMarkdown(aiAnalysisState.text)
+      : `<p>${escapeHtml(t("sidebar.aiLoading"))}</p>`;
+  }
+
+  function aiJobKey(job, result) {
+    return String(
+      (result && result.jobId) ||
+        (job && (job.jobId || job.url || job.title)) ||
+        ""
+    );
   }
 
   function compactJobForAi(job) {

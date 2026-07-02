@@ -1,6 +1,6 @@
 {
   "name": "upwork-enhancer",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "description": "Chrome extension for evaluating Upwork opportunities while browsing.",
   "scripts": {

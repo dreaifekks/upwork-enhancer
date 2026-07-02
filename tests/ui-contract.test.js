@@ -46,6 +46,9 @@ test("content script supports anchored detail panel and theme classes", () => {
   assert.match(contentScript, /function detailPlacement/);
   assert.match(contentScript, /findInlineReviewAnchor/);
   assert.match(contentScript, /findMainContentRect/);
+  assert.match(contentScript, /AI_ANALYZE_STREAM/);
+  assert.match(contentScript, /AI_ANALYZE_STREAM_EVENT/);
+  assert.match(contentScript, /renderAiState/);
   assert.match(contentScript, /uwe-theme-dark/);
   assert.match(contentScript, /uwe-score-help/);
   assert.match(css, /uwe-sidebar--inline/);
