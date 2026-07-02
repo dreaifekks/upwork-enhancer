@@ -24,3 +24,11 @@ test("options page supports profile URL workflow and AI testing", () => {
   assert.match(options, /id="testAi"/);
   assert.match(options, /name="apiKey"/);
 });
+
+test("content script handles invalidated extension runtime messages", () => {
+  const contentScript = readFileSync("src/content/upworkContentScript.js", "utf8");
+
+  assert.match(contentScript, /try\s*{\s*runtime\.sendMessage/s);
+  assert.match(contentScript, /catch \(error\)\s*{\s*resolve\(\{ ok: false/s);
+  assert.match(contentScript, /safeRuntimeLastError/);
+});

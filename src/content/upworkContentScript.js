@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.3";
+  const CONTENT_SCRIPT_VERSION = "0.1.4";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -33,10 +33,37 @@
       return Promise.resolve({ ok: false, error: "runtime unavailable" });
     }
     return new Promise((resolve) => {
-      runtime.sendMessage(message, (response) => {
-        resolve(response || { ok: false, error: chrome.runtime.lastError });
-      });
+      try {
+        runtime.sendMessage(message, (response) => {
+          const lastError = safeRuntimeLastError();
+          resolve(
+            response ||
+              (lastError
+                ? { ok: false, error: lastError }
+                : { ok: false, error: "empty response" })
+          );
+        });
+      } catch (error) {
+        resolve({ ok: false, error: messageFromError(error) });
+      }
     });
+  }
+
+  function safeRuntimeLastError() {
+    try {
+      const lastError =
+        typeof chrome !== "undefined" &&
+        chrome.runtime &&
+        chrome.runtime.lastError;
+      return lastError ? messageFromError(lastError) : "";
+    } catch (error) {
+      return messageFromError(error);
+    }
+  }
+
+  function messageFromError(error) {
+    if (!error) return "";
+    return error.message || String(error);
   }
 
   if (runtime && runtime.onMessage) {
