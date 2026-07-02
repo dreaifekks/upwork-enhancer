@@ -161,7 +161,8 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
       fetchCalls.push(JSON.parse(options.body));
       return streamResponse([
         'data: {"choices":[{"delta":{"content":"## Fit\\n"}}]}\n\n',
-        'data: {"choices":[{"delta":{"content":"Good match."}}]}\n\n',
+        'data: {"choices":[{"delta":\n',
+        'data: {"content":"Good match."}}]}\n\n',
         "data: [DONE]\n\n"
       ]);
     },
@@ -194,6 +195,7 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].stream, true);
   assert.equal(fetchCalls[0].model, "demo-model");
+  assert.equal(fetchCalls[0].max_tokens, 1600);
   assert.deepEqual(
     JSON.parse(JSON.stringify(streamMessages.map((item) => item.message))),
     [

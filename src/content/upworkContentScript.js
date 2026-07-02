@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.12";
+  const CONTENT_SCRIPT_VERSION = "0.1.13";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -405,8 +405,10 @@
     const margin = 22;
     const fallbackTop = 84;
     const mainRect = findMainContentRect();
-    const measuredWidth = sidebar.getBoundingClientRect().width || 360;
-    let sidebarWidth = Math.min(measuredWidth, 360, window.innerWidth - margin * 2);
+    const maxWidth = 360;
+    const minWidth = 260;
+    const measuredWidth = sidebar.getBoundingClientRect().width || maxWidth;
+    let sidebarWidth = Math.min(measuredWidth, maxWidth, window.innerWidth - margin * 2);
     const fallbackLeft = clamp(
       Math.round(window.innerWidth * 0.12),
       margin,
@@ -418,8 +420,15 @@
     if (mainRect) {
       top = clamp(mainRect.top, 70, Math.max(70, window.innerHeight - 180));
       const availableLeft = mainRect.left - gap - margin;
-      if (availableLeft >= 300) {
-        sidebarWidth = Math.min(sidebarWidth, 360, availableLeft - 16);
+      const availableRight = window.innerWidth - mainRect.right - gap - margin;
+      if (availableLeft >= minWidth) {
+        sidebarWidth = Math.min(sidebarWidth, maxWidth, availableLeft);
+        left = mainRect.left - sidebarWidth - gap;
+      } else if (availableRight >= minWidth) {
+        sidebarWidth = Math.min(sidebarWidth, maxWidth, availableRight);
+        left = mainRect.right + gap;
+      } else if (availableLeft > 0) {
+        sidebarWidth = Math.max(180, Math.min(sidebarWidth, availableLeft));
         left = Math.max(margin, mainRect.left - sidebarWidth - gap);
       } else {
         left = clamp(
@@ -502,8 +511,10 @@
 
   function findMainContentRect() {
     const title = findVisibleTitle();
+    const rects = [];
     if (title) {
       const titleRect = title.getBoundingClientRect();
+      rects.push(titleRect);
       let node = title.parentElement;
       while (node && node !== document.body) {
         const rect = node.getBoundingClientRect();
@@ -514,14 +525,36 @@
           rect.left <= titleRect.left + 12 &&
           rect.height >= titleRect.height
         ) {
-          return rect;
+          rects.push(rect);
+          break;
         }
         node = node.parentElement;
       }
-      return titleRect;
     }
     const summary = findInlineReviewAnchor();
-    return summary ? summary.getBoundingClientRect() : null;
+    if (summary) {
+      rects.push(summary.getBoundingClientRect());
+    }
+    return rects.length ? mergeRects(rects) : null;
+  }
+
+  function mergeRects(rects) {
+    const visibleRects = rects.filter(
+      (rect) => rect && rect.width > 0 && rect.height > 0
+    );
+    if (!visibleRects.length) return null;
+    const left = Math.min(...visibleRects.map((rect) => rect.left));
+    const top = Math.min(...visibleRects.map((rect) => rect.top));
+    const right = Math.max(...visibleRects.map((rect) => rect.right));
+    const bottom = Math.max(...visibleRects.map((rect) => rect.bottom));
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top
+    };
   }
 
   function findVisibleTitle() {

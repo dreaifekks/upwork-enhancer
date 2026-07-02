@@ -1,6 +1,8 @@
 importScripts("../shared/defaultSettings.js");
 
 const UWE = self.UpworkEnhancer;
+const AI_MAX_TOKENS = 1600;
+const AI_STREAM_TIMEOUT_MS = 90000;
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -260,7 +262,7 @@ async function requestAiAnalysis(settings, prompt) {
       body: JSON.stringify({
         model: settings.api.model,
         temperature: 0.3,
-        max_tokens: 900,
+        max_tokens: AI_MAX_TOKENS,
         stream: false,
         messages: [
           {
@@ -298,7 +300,7 @@ async function requestAiAnalysis(settings, prompt) {
 async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
   const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), AI_STREAM_TIMEOUT_MS);
 
   try {
     const response = await fetch(endpoint, {
@@ -311,7 +313,7 @@ async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
       body: JSON.stringify({
         model: settings.api.model,
         temperature: 0.3,
-        max_tokens: 900,
+        max_tokens: AI_MAX_TOKENS,
         stream: true,
         messages: [
           {
@@ -387,34 +389,85 @@ function extractAiText(payload) {
 }
 
 function parseSseRecord(record) {
-  const deltas = [];
-  String(record || "")
-    .split(/\r?\n/)
-    .forEach((line) => {
-      if (!/^data:/i.test(line)) return;
-      const data = line.replace(/^data:\s*/i, "");
-      if (!data || data === "[DONE]") return;
-      let payload;
-      try {
-        payload = JSON.parse(data);
-      } catch (_) {
-        return;
-      }
-      const choice = payload && payload.choices && payload.choices[0];
-      const delta =
-        (choice &&
-          choice.delta &&
-          typeof choice.delta.content === "string" &&
-          choice.delta.content) ||
-        (choice &&
-          choice.message &&
-          typeof choice.message.content === "string" &&
-          choice.message.content) ||
-        (choice && typeof choice.text === "string" && choice.text) ||
-        "";
-      if (delta) deltas.push(delta);
-    });
+  const lines = String(record || "").split(/\r?\n/);
+  const dataLines = [];
+  const jsonLines = [];
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (/^data:/i.test(line)) {
+      dataLines.push(line.replace(/^data:\s*/i, ""));
+      return;
+    }
+    if (trimmed[0] === "{") {
+      jsonLines.push(trimmed);
+    }
+  });
+
+  const deltas = deltasFromDataLines(dataLines);
+  if (deltas.length) return deltas;
+
+  jsonLines.forEach((line) => {
+    const payload = parseJson(line);
+    const delta = deltaFromPayload(payload);
+    if (delta) deltas.push(delta);
+  });
   return deltas;
+}
+
+function deltasFromDataLines(dataLines) {
+  const deltas = [];
+  if (!dataLines.length) return deltas;
+
+  const joined = dataLines.join("\n").trim();
+  if (!joined || joined === "[DONE]") return deltas;
+
+  const joinedPayload = parseJson(joined);
+  const joinedDelta = deltaFromPayload(joinedPayload);
+  if (joinedDelta) {
+    deltas.push(joinedDelta);
+    return deltas;
+  }
+
+  dataLines.forEach((line) => {
+    const data = String(line || "").trim();
+    if (!data || data === "[DONE]") return;
+    const payload = parseJson(data);
+    const delta = deltaFromPayload(payload);
+    if (delta) deltas.push(delta);
+  });
+  return deltas;
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+function deltaFromPayload(payload) {
+  const choice = payload && payload.choices && payload.choices[0];
+  return (
+    (choice &&
+      choice.delta &&
+      typeof choice.delta.content === "string" &&
+      choice.delta.content) ||
+    (choice &&
+      choice.delta &&
+      typeof choice.delta.text === "string" &&
+      choice.delta.text) ||
+    (choice &&
+      choice.message &&
+      typeof choice.message.content === "string" &&
+      choice.message.content) ||
+    (choice && typeof choice.text === "string" && choice.text) ||
+    (payload && typeof payload.delta === "string" && payload.delta) ||
+    (payload && typeof payload.output_text === "string" && payload.output_text) ||
+    ""
+  );
 }
 
 async function sendAiStreamEvent(sender, requestId, event) {
