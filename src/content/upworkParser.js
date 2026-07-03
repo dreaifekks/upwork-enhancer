@@ -153,19 +153,61 @@
     };
   }
 
-  function parseProposalCount(text) {
+  function proposalBucket(min, max, openEnded) {
+    if (openEnded && min >= 50) return "extreme";
+    if (max <= 5) return "low";
+    if (max <= 15) return "moderate";
+    if (max <= 50) return "high";
+    return "extreme";
+  }
+
+  function parseProposalSignal(text) {
     const source = String(text || "");
     const proposalMatch = source.match(
       /(?:proposals?|proposal count)\s*:?\s*(less than\s+\d+|\d+\s*(?:to|-|–)\s*\d+|\d+\+?)/i
     );
-    if (!proposalMatch) return null;
-    const value = proposalMatch[1].toLowerCase();
+    if (!proposalMatch) return {
+      count: null,
+      label: "",
+      bucket: "",
+      openEnded: false
+    };
+    const rawValue = cleanText(proposalMatch[1]);
+    const value = rawValue.toLowerCase();
     const lessThan = value.match(/less than\s+(\d+)/);
-    if (lessThan) return Math.max(0, Number(lessThan[1]) - 1);
+    if (lessThan) {
+      const max = Math.max(0, Number(lessThan[1]) - 1);
+      return {
+        count: max,
+        label: rawValue,
+        bucket: proposalBucket(0, max, false),
+        openEnded: false
+      };
+    }
     const range = value.match(/(\d+)\s*(?:to|-|–)\s*(\d+)/);
-    if (range) return Math.round((Number(range[1]) + Number(range[2])) / 2);
+    if (range) {
+      const min = Number(range[1]);
+      const max = Number(range[2]);
+      return {
+        count: max,
+        label: rawValue,
+        bucket: proposalBucket(min, max, false),
+        openEnded: false
+      };
+    }
     const single = value.match(/(\d+)/);
-    return single ? Number(single[1]) : null;
+    const count = single ? Number(single[1]) : null;
+    const openEnded = /\+/.test(value);
+    return {
+      count,
+      label: rawValue,
+      bucket: count === null ? "" : proposalBucket(count, count, openEnded),
+      openEnded
+    };
+  }
+
+  function parseProposalCount(text) {
+    return parseProposalSignal(text).count;
   }
 
   function parseCount(label, text) {
@@ -449,6 +491,7 @@
     const url = absoluteUrl((link && link.getAttribute("href")) || fallbackUrl);
     const hourly = parseHourly(text);
     const fixedBudget = parseFixedBudget(text);
+    const proposalSignal = parseProposalSignal(text);
     const clientPaymentVerified = /payment verified/i.test(text)
       ? true
       : /payment unverified|payment not verified/i.test(text)
@@ -473,7 +516,10 @@
       ]),
       postedAge: (text.match(/(\d+\s+\w+\s+ago)/i) || [])[1] || "",
       postedAgeHours: parsePostedAgeHours(text),
-      proposalCount: parseProposalCount(text),
+      proposalCount: proposalSignal.count,
+      proposalCountLabel: proposalSignal.label,
+      proposalCountBucket: proposalSignal.bucket,
+      proposalCountIsOpenEnded: proposalSignal.openEnded,
       interviewCount: parseCount("interviewing|interviews?", text),
       inviteCount: parseCount("invites? sent|invites?", text),
       clientPaymentVerified,
@@ -502,12 +548,98 @@
     };
   }
 
+  function elementValue(element) {
+    if (!element) return "";
+    return [
+      element.getAttribute && element.getAttribute("href"),
+      element.getAttribute && element.getAttribute("value"),
+      "value" in element ? element.value : "",
+      element.textContent
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function matchesCurrentJobId(element, currentJobId) {
+    return Boolean(
+      currentJobId &&
+        element &&
+        !element.closest(".uwe-sidebar, .uwe-card-panel, .uwe-badge") &&
+        elementValue(element).includes(currentJobId)
+    );
+  }
+
+  function detailRootCandidateScore(node, currentUrl) {
+    if (!node || !node.querySelectorAll || node === node.ownerDocument.body) {
+      return 0;
+    }
+    if (node.closest(".uwe-sidebar, .uwe-card-panel, .uwe-badge")) return 0;
+    const text = textOf(node);
+    if (text.length < 240 || text.length > 30000) return 0;
+
+    let score = 0;
+    if (/^(Summary|Job Description)\b/i.test(text)) score += 4;
+    if (/\b(Summary|Job Description)\b/i.test(text)) score += 3;
+    if (/Activity on this job|Proposals?\s*:/i.test(text)) score += 3;
+    if (/About the client|Payment method|Payment verified|Payment not verified/i.test(text)) {
+      score += 3;
+    }
+    if (/Send a proposal|Apply now|Job link/i.test(text)) score += 2;
+    if (/Skills and Expertise|Required Skills|Mandatory skills/i.test(text)) score += 2;
+    if (/\b(total spent|hire rate|reviews?|Interviewing|Invites sent)\b/i.test(text)) {
+      score += 2;
+    }
+    if (firstDetailTitle(node, currentUrl)) score += 2;
+
+    const jobLinks = jobLinksOf(node).length;
+    if (jobLinks > 4) score -= Math.min(5, jobLinks - 4);
+    return score >= 6 ? score : 0;
+  }
+
+  function detailRootFromCurrentJobId(doc) {
+    if (!doc || !doc.querySelectorAll) return null;
+    const currentUrl = documentUrl(doc);
+    const currentJobId = extractJobIdFromUrl(currentUrl);
+    if (!currentJobId) return null;
+
+    const matches = Array.from(
+      doc.querySelectorAll("a[href], input, textarea")
+    ).filter((element) => matchesCurrentJobId(element, currentJobId));
+    const seen = new Set();
+    const candidates = [];
+
+    matches.forEach((match) => {
+      let node = match;
+      for (let depth = 0; node && node !== doc.body && depth < 10; depth += 1) {
+        if (!seen.has(node)) {
+          seen.add(node);
+          const score = detailRootCandidateScore(node, currentUrl);
+          if (score) {
+            candidates.push({
+              node,
+              score,
+              textLength: textOf(node).length
+            });
+          }
+        }
+        node = node.parentElement;
+      }
+    });
+
+    candidates.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.textLength - b.textLength;
+    });
+    return candidates[0] ? candidates[0].node : null;
+  }
+
   function findDetailRootNode(doc) {
     return (
       doc.querySelector(".air3-slider-job-details .job-details-content") ||
       doc.querySelector(".air3-slider-job-details") ||
       doc.querySelector("[data-test='job-details']") ||
       doc.querySelector("[data-test*='job-detail']") ||
+      detailRootFromCurrentJobId(doc) ||
       doc.querySelector("main") ||
       doc.body
     );
@@ -522,17 +654,38 @@
     );
   }
 
+  function isDetailLikeUrl(url) {
+    return /\/jobs\//.test(url) || /\/details\/~[A-Za-z0-9_]+/.test(url);
+  }
+
+  function titleSelectorsForDetail(rootNode, currentUrl) {
+    return isSliderDetailRoot(rootNode) || isDetailLikeUrl(currentUrl)
+      ? ["h1", "h2", "h3", "h4", '[data-test*="job-title"]']
+      : ["h1", '[data-test*="job-title"]'];
+  }
+
+  function isSectionHeading(value) {
+    return /^(About the client|Activity on this job|Average bid amounts|Boost your proposal|Client's recent history|Cover letter|Hiring activity|Insights|Job details|Other open jobs|Project Type|Skills and Expertise|Your proposed terms)\b/i.test(
+      value
+    );
+  }
+
+  function firstDetailTitle(rootNode, currentUrl) {
+    const selector = titleSelectorsForDetail(rootNode, currentUrl).join(", ");
+    return Array.from(rootNode.querySelectorAll(selector))
+      .filter((element) => !element.closest(".uwe-sidebar, .uwe-card-panel"))
+      .map(textOf)
+      .find((value) => value && !isSectionHeading(value)) || "";
+  }
+
   function parseJobDetail(doc) {
     const rootNode = findDetailRootNode(doc);
     const currentUrl = documentUrl(doc);
     const documentTitle = cleanText(
       String(doc.title || "").replace(/\s*\|\s*Upwork.*/i, "")
     );
-    const titleSelectors = isSliderDetailRoot(rootNode)
-      ? ["h1", "h2", "h3", "h4", '[data-test*="job-title"]']
-      : ["h1", '[data-test*="job-title"]'];
     const title =
-      firstText(rootNode, titleSelectors) ||
+      firstDetailTitle(rootNode, currentUrl) ||
       documentTitle ||
       firstText(rootNode, ['[data-cy*="job-title"]']);
     const fields = commonFields(rootNode, currentUrl);
@@ -549,6 +702,26 @@
   function documentUrl(doc) {
     if (root.location && root.location.href) return root.location.href;
     return doc && doc.location && doc.location.href ? doc.location.href : "";
+  }
+
+  function profileUrlFromDocument(doc) {
+    const currentUrl = documentUrl(doc);
+    if (/\/freelancers\/~[A-Za-z0-9]+/.test(currentUrl)) return currentUrl;
+
+    const publicProfileLink =
+      doc && doc.querySelector && doc.querySelector('a[href*="/freelancers/~"]');
+    const href =
+      publicProfileLink &&
+      (publicProfileLink.getAttribute("href") || publicProfileLink.href);
+    if (!href) return currentUrl;
+    if (/^https?:\/\//i.test(href)) return href;
+    if (href.startsWith("/")) return `https://www.upwork.com${href}`;
+
+    try {
+      return new URL(href, currentUrl || "https://www.upwork.com").toString();
+    } catch (_) {
+      return currentUrl;
+    }
   }
 
   function titleProfileParts(doc) {
@@ -680,6 +853,9 @@
   function isLikelyProfilePage(doc) {
     const url = documentUrl(doc);
     if (/\/freelancers\/~[A-Za-z0-9]+/.test(url)) return true;
+    if (doc && doc.querySelector && doc.querySelector('a[href*="/freelancers/~"]')) {
+      return true;
+    }
     const bodyText = textOf((doc && doc.body) || null).slice(0, 4000);
     return /Profile settings|See public view|Work history|Your project catalog/i.test(
       bodyText
@@ -712,7 +888,7 @@
       portfolio: parseProfilePortfolio(rootNode),
       languages: parseProfileLanguages(fullText),
       location: parseProfileLocation(fullText),
-      profileUrl: documentUrl(doc),
+      profileUrl: profileUrlFromDocument(doc),
       updatedAt: new Date().toISOString()
     };
 
@@ -749,22 +925,14 @@
 
   function isLikelyDetailPage(doc) {
     const currentUrl = documentUrl(doc);
-    const urlLooksDetail =
-      /\/jobs\//.test(currentUrl) || /\/details\/~[A-Za-z0-9_]+/.test(currentUrl);
+    const urlLooksDetail = isDetailLikeUrl(currentUrl);
     const rootNode = findDetailRootNode(doc);
     const hasDetailContainer = Boolean(
       doc.querySelector(
         "[data-test='job-details'], [data-test*='job-detail'], .air3-slider-job-details, .job-details-content"
       )
     );
-    const hasDomTitle = Boolean(
-      rootNode &&
-        rootNode.querySelector(
-          isSliderDetailRoot(rootNode)
-            ? "h1, h2, h3, h4, [data-test*='job-title']"
-            : "h1, [data-test*='job-title']"
-        )
-    );
+    const hasDomTitle = Boolean(rootNode && firstDetailTitle(rootNode, currentUrl));
     const hasDocumentTitle = Boolean(
       (urlLooksDetail || hasDetailContainer) &&
         cleanText(doc.title).length >= 12 &&
@@ -785,6 +953,8 @@
     detectJobCardContext,
     parseJobCard,
     parseJobDetail,
+    parseProposalSignal,
+    findDetailRootNode,
     findJobCards,
     isLikelyDetailPage,
     isLikelyProfilePage,

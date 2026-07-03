@@ -66,6 +66,7 @@ body {
   gap: 10px;
   height: 600px;
   max-height: 600px;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px;
 }
@@ -77,6 +78,10 @@ body {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+}
+
+.popup-footer {
+  align-items: flex-start;
 }
 
 .button-row {
@@ -283,6 +288,11 @@ button.secondary {
   color: var(--text);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .muted {
   min-height: 16px;
   margin: 0;
@@ -299,11 +309,15 @@ button.secondary {
 }
 
 #status {
+  flex: 1 1 auto;
   min-width: 0;
+  max-height: 42px;
   color: var(--accent-dark);
   font-size: 12px;
   font-weight: 720;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  text-align: right;
+  white-space: normal;
 }

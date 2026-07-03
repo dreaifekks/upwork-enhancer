@@ -113,6 +113,66 @@ test("uses configured off-platform phrases for high-risk pass decisions", () => 
   assert.ok(result.riskNotes.some((note) => note.key === "reason.offPlatform"));
 });
 
+test("treats public proposal ranges as conservative competition buckets", () => {
+  assert.deepEqual(UWE.parseProposalSignal("Proposals: 20 to 50"), {
+    count: 50,
+    label: "20 to 50",
+    bucket: "high",
+    openEnded: false
+  });
+  assert.deepEqual(UWE.parseProposalSignal("Proposals: 50+"), {
+    count: 50,
+    label: "50+",
+    bucket: "extreme",
+    openEnded: true
+  });
+
+  const high = scoreJob(
+    {
+      title: "Build a React SaaS dashboard",
+      description: "React SaaS work. Payment verified. Proposals: 20 to 50.",
+      skills: ["React", "SaaS"],
+      hourlyMin: 45,
+      hourlyMax: 70,
+      proposalCount: 50,
+      proposalCountLabel: "20 to 50",
+      proposalCountBucket: "high",
+      clientPaymentVerified: true
+    },
+    UWE.DEFAULT_SETTINGS
+  );
+  const extreme = scoreJob(
+    {
+      title: "Build a React SaaS dashboard",
+      description: "React SaaS work. Payment verified. Proposals: 50+.",
+      skills: ["React", "SaaS"],
+      hourlyMin: 45,
+      hourlyMax: 70,
+      proposalCount: 50,
+      proposalCountLabel: "50+",
+      proposalCountBucket: "extreme",
+      proposalCountIsOpenEnded: true,
+      clientPaymentVerified: true
+    },
+    UWE.DEFAULT_SETTINGS
+  );
+
+  assert.ok(extreme.competitionScore < high.competitionScore);
+  assert.ok(
+    high.negativeReasons.some((note) => note.key === "reason.highCompetitionBucket")
+  );
+  assert.ok(
+    extreme.negativeReasons.some((note) => note.key === "reason.extremeCompetition")
+  );
+  assert.match(
+    UWE.localizeReason(
+      "zh",
+      extreme.negativeReasons.find((note) => note.key === "reason.extremeCompetition")
+    ),
+    /真实数量可能远高于/
+  );
+});
+
 test("localizes labels in English and Chinese", () => {
   assert.equal(UWE.t("en", "action.apply"), "Apply");
   assert.equal(UWE.t("zh", "action.apply"), "投递");

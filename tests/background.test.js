@@ -132,6 +132,62 @@ test("IMPORT_PROFILE_FROM_ACTIVE_TAB keeps current preferences when profile has 
   );
 });
 
+test("IMPORT_PROFILE_FROM_ACTIVE_TAB prefers an open freelancer profile tab", async () => {
+  const queried = [];
+  const messagedTabs = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        preferredSkills: ["Manual Skill"],
+        preferredProjectTypes: ["manual project"]
+      }
+    },
+    tabQueryImpl: async (query) => {
+      queried.push(query);
+      if (query && query.url) {
+        return [
+          {
+            id: 11,
+            url: "https://www.upwork.com/freelancers/~011?viewMode=1"
+          }
+        ];
+      }
+      return [{ id: 7, url: "https://www.upwork.com/nx/search/jobs/" }];
+    },
+    tabSendMessageImpl: async (tabId, message) => {
+      if (message && message.type === "REQUEST_PROFILE_SNAPSHOT") {
+        messagedTabs.push(tabId);
+      }
+      return {
+        ok: true,
+        profile: {
+          title: "AI automation developer",
+          overview: "I build React and Node.js automations.",
+          skills: ["React", "Node.js"],
+          portfolio: [],
+          profileUrl: "https://www.upwork.com/freelancers/~011?viewMode=1",
+          updatedAt: "2026-07-03T00:00:00.000Z"
+        }
+      };
+    }
+  });
+
+  const response = await worker.send({ type: "IMPORT_PROFILE_FROM_ACTIVE_TAB" });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(messagedTabs, [11]);
+  assert.equal(queried[0].currentWindow, true);
+  assert.ok(queried[0].url);
+  assert.ok(
+    queried[0].url.includes("https://www.upwork.com/freelancers/settings/profile*")
+  );
+  assert.deepEqual(Array.from(worker.store.uwe_settings_v1.preferredSkills), [
+    "React",
+    "Node.js",
+    "Automation"
+  ]);
+});
+
 test("TEST_AI_CONFIG sends the stored API key only from the service worker", async () => {
   const fetchCalls = [];
   const worker = createServiceWorker({
@@ -187,6 +243,7 @@ test("AI_ANALYZE retries with a compact prompt after a network failure", async (
           model: "demo-model",
           [API_KEY_FIELD]: TEST_API_KEY
         },
+        language: "zh",
         profileSummary: "Full-stack React and Node developer",
         preferredSkills: ["React", "Node.js"]
       }
@@ -226,6 +283,10 @@ test("AI_ANALYZE retries with a compact prompt after a network failure", async (
   assert.equal(fetchCalls.length, 2);
   assert.equal(fetchCalls[0].model, "demo-model");
   assert.equal(fetchCalls[0].messages[0].content.includes("Return Markdown"), true);
+  assert.match(fetchCalls[0].messages[1].content, /需求总结/);
+  assert.match(fetchCalls[0].messages[1].content, /write in Simplified Chinese/);
+  assert.match(fetchCalls[0].messages[1].content, /Proposal angle - write in English/);
+  assert.match(fetchCalls[0].messages[1].content, /opener - write in English/);
   assert.ok(
     fetchCalls[1].messages[1].content.length < fetchCalls[0].messages[1].content.length
   );
@@ -385,9 +446,9 @@ function createServiceWorker({
         }
       },
       tabs: {
-        async query() {
+        async query(query) {
           if (tabQueryImpl) {
-            return tabQueryImpl();
+            return tabQueryImpl(query);
           }
           return [];
         },

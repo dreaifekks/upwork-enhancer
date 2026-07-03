@@ -1,6 +1,6 @@
 {
   "name": "upwork-enhancer",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "license": "Apache-2.0",
   "description": "Chrome extension for evaluating Upwork opportunities while browsing.",

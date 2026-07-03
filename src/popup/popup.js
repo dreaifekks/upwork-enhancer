@@ -70,8 +70,14 @@
         setStatus(UWE.t(settings.language, "options.profileUrlRequired"));
         return;
       }
-      await openUrl(profileUrl);
-      setStatus(UWE.t(settings.language, "options.openedProfile"));
+      try {
+        await openUrl(profileUrl);
+        setStatus(UWE.t(settings.language, "options.openedProfile"));
+      } catch (error) {
+        setStatus(
+          `${UWE.t(settings.language, "popup.error")}: ${messageFromError(error)}`
+        );
+      }
     });
 
     controls.testAi.addEventListener("click", async () => {
@@ -317,7 +323,7 @@
         settings.language,
         "popup.importProfile"
       );
-      controls.openProfile.disabled = true;
+      controls.openProfile.disabled = false;
       return;
     }
 
@@ -330,7 +336,7 @@
       .filter(Boolean)
       .join(" | ");
     controls.importProfile.textContent = UWE.t(settings.language, "popup.updateProfile");
-    controls.openProfile.disabled = !validatedProfileUrl(settings.profileUrl);
+    controls.openProfile.disabled = false;
   }
 
   function renderAiStatus() {
@@ -360,6 +366,11 @@
 
   function setStatus(message) {
     controls.status.textContent = message || "";
+  }
+
+  function messageFromError(error) {
+    if (!error) return "";
+    return error.message || String(error);
   }
 
   async function requestApiPermission(next) {

@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.15";
+  const CONTENT_SCRIPT_VERSION = "0.1.16";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -88,7 +88,10 @@
 
   function sendMessage(message) {
     if (!runtime) {
-      return Promise.resolve({ ok: false, error: "runtime unavailable" });
+      return Promise.resolve({
+        ok: false,
+        error: runtimeErrorMessage("runtime unavailable")
+      });
     }
     return new Promise((resolve) => {
       try {
@@ -102,7 +105,7 @@
           );
         });
       } catch (error) {
-        resolve({ ok: false, error: messageFromError(error) });
+        resolve({ ok: false, error: runtimeErrorMessage(error) });
       }
     });
   }
@@ -113,15 +116,23 @@
         typeof chrome !== "undefined" &&
         chrome.runtime &&
         chrome.runtime.lastError;
-      return lastError ? messageFromError(lastError) : "";
+      return lastError ? runtimeErrorMessage(lastError) : "";
     } catch (error) {
-      return messageFromError(error);
+      return runtimeErrorMessage(error);
     }
   }
 
-  function messageFromError(error) {
+  function rawErrorMessage(error) {
     if (!error) return "";
     return error.message || String(error);
+  }
+
+  function runtimeErrorMessage(error) {
+    const message = rawErrorMessage(error);
+    if (/extension context invalidated/i.test(message)) {
+      return t("sidebar.extensionReloaded");
+    }
+    return message;
   }
 
   function handleAiStreamEvent(message) {
@@ -535,6 +546,7 @@
 
   function findDetailRoot() {
     return (
+      (UWE.findDetailRootNode && UWE.findDetailRootNode(document)) ||
       document.querySelector(".air3-slider-job-details .job-details-content") ||
       document.querySelector(".air3-slider-job-details") ||
       document.querySelector("[data-test='job-details']") ||
@@ -673,12 +685,12 @@
       return;
     }
 
-    const placement = detailPlacement();
-    const anchor = placement === "inline" ? findInlineReviewAnchor() : null;
+    let placement = detailPlacement();
+    let anchor = placement === "inline" ? findInlineReviewAnchor() : null;
     const existingSidebar = document.querySelector(".uwe-sidebar");
     if (placement === "inline" && !anchor && !existingSidebar) {
-      lastSidebarSignature = "";
-      return;
+      placement = "floating-left";
+      anchor = null;
     }
     const sidebar = getSidebar(placement);
     const job = UWE.parseJobDetail(document);
@@ -950,7 +962,7 @@
 
     if (aiAnalysisState.status === "error") {
       const error = aiAnalysisState.error || "AI failed";
-      status.textContent = error;
+      status.textContent = t("sidebar.aiError");
       output.innerHTML = `<p>${escapeHtml(error)}</p>`;
       return;
     }
@@ -982,6 +994,9 @@
       fixedBudget: job.fixedBudget,
       experienceLevel: job.experienceLevel,
       proposalCount: job.proposalCount,
+      proposalCountLabel: job.proposalCountLabel,
+      proposalCountBucket: job.proposalCountBucket,
+      proposalCountIsOpenEnded: job.proposalCountIsOpenEnded,
       clientPaymentVerified: job.clientPaymentVerified,
       clientRating: job.clientRating,
       clientSpend: job.clientSpend,

@@ -19,6 +19,9 @@ test("popup exposes quick operations without API key input", () => {
   assert.doesNotMatch(popup, /<textarea id="preferredSkills"/);
   assert.match(popupCss, /--tag-editor-rows:\s*3/);
   assert.match(popupCss, /height:\s*600px/);
+  assert.match(popupCss, /overflow-x:\s*hidden/);
+  assert.match(popupCss, /#status\s*\{[\s\S]*white-space:\s*normal/);
+  assert.match(popupCss, /#status\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
   assert.doesNotMatch(popupCss, /100vh/);
   assert.doesNotMatch(popup, /apiKey|API key|type="password"/i);
 });
@@ -46,6 +49,10 @@ test("content script handles invalidated extension runtime messages", () => {
   assert.match(contentScript, /try\s*{\s*runtime\.sendMessage/s);
   assert.match(contentScript, /catch \(error\)\s*{\s*resolve\(\{ ok: false/s);
   assert.match(contentScript, /safeRuntimeLastError/);
+  assert.match(contentScript, /runtimeErrorMessage/);
+  assert.match(contentScript, /extension context invalidated/i);
+  assert.match(contentScript, /sidebar\.extensionReloaded/);
+  assert.match(contentScript, /sidebar\.aiError/);
 });
 
 test("content script supports anchored detail panel and theme classes", () => {
@@ -66,6 +73,28 @@ test("content script supports anchored detail panel and theme classes", () => {
   assert.match(css, /uwe-sidebar--floating-left/);
   assert.match(css, /uwe-score-tip/);
   assert.match(css, /@media \(max-width: 980px\)/);
+});
+
+test("profile parser can persist a public freelancer profile URL", () => {
+  const parser = readFileSync("src/content/upworkParser.js", "utf8");
+
+  assert.match(parser, /function profileUrlFromDocument/);
+  assert.match(parser, /a\[href\*="\/freelancers\/~"\]/);
+  assert.match(parser, /https:\/\/www\.upwork\.com/);
+  assert.match(parser, /profileUrl:\s*profileUrlFromDocument\(doc\)/);
+});
+
+test("detail parser accepts saved preview h4 titles without section headings", () => {
+  const parser = readFileSync("src/content/upworkParser.js", "utf8");
+
+  assert.match(parser, /function isDetailLikeUrl/);
+  assert.match(parser, /function detailRootFromCurrentJobId/);
+  assert.match(parser, /function findDetailRootNode/);
+  assert.match(parser, /detailRootFromCurrentJobId\(doc\)/);
+  assert.match(parser, /function firstDetailTitle/);
+  assert.match(parser, /function isSectionHeading/);
+  assert.match(parser, /isDetailLikeUrl\(currentUrl\)/);
+  assert.match(parser, /Skills and Expertise/);
 });
 
 test("detail scores are available to matching list cards", () => {
@@ -100,7 +129,9 @@ test("inline detail review only anchors to summary content", () => {
 
   assert.match(contentScript, /function placeSidebar\(sidebar, placement, anchor\)/);
   assert.match(contentScript, /function ensureInlineSidebarAnchored\(sidebar, placement\)/);
+  assert.match(contentScript, /UWE\.findDetailRootNode && UWE\.findDetailRootNode\(document\)/);
   assert.match(contentScript, /placement === "inline" && !anchor && !existingSidebar/);
+  assert.match(contentScript, /placement = "floating-left"/);
   assert.match(contentScript, /return isSummaryLikeElement\(element, text\);/);
   assert.match(contentScript, /ensureInlineSidebarAnchored\(sidebar, placement\);/);
   assert.doesNotMatch(contentScript, /titleBlock\.nextElementSibling/);

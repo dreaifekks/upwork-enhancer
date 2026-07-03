@@ -3,6 +3,14 @@ importScripts("../shared/defaultSettings.js");
 const UWE = self.UpworkEnhancer;
 const AI_MAX_TOKENS = 1600;
 const AI_STREAM_TIMEOUT_MS = 90000;
+const AI_SYSTEM_PROMPT = [
+  "You are a concise Upwork opportunity analyst.",
+  "Focus on fit, risks, and proposal angle.",
+  "Follow the requested output language split exactly.",
+  "Keep client-facing proposal advice and opener text in polished English.",
+  "Do not suggest off-platform behavior.",
+  "Return Markdown."
+].join(" ");
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -115,31 +123,40 @@ async function importProfileFromActiveTab() {
     return { ok: false, error: "Tab access is unavailable." };
   }
 
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs && tabs[0];
-  if (!tab || !tab.id) {
-    return { ok: false, error: "No active tab found." };
+  const tabs = await profileImportCandidateTabs();
+  if (!tabs.length) {
+    return {
+      ok: false,
+      error: "Open your Upwork freelancer profile page before importing."
+    };
   }
 
   let response;
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, {
-      type: "REQUEST_PROFILE_SNAPSHOT"
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        "Open your Upwork freelancer profile page and reload it before importing."
-    };
+  let lastError = "";
+  for (const tab of tabs) {
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, {
+        type: "REQUEST_PROFILE_SNAPSHOT"
+      });
+    } catch (error) {
+      lastError =
+        "Open your Upwork freelancer profile page and reload it before importing.";
+      continue;
+    }
+
+    if (response && response.ok && response.profile) {
+      break;
+    }
+    lastError =
+      (response && response.error) ||
+      "Open your Upwork freelancer profile page before importing.";
+    response = null;
   }
 
   if (!response || !response.ok || !response.profile) {
     return {
       ok: false,
-      error:
-        (response && response.error) ||
-        "Open your Upwork freelancer profile page before importing."
+      error: lastError || "Open your Upwork freelancer profile page before importing."
     };
   }
 
@@ -168,6 +185,42 @@ async function importProfileFromActiveTab() {
     profile,
     settings: publicSettings
   };
+}
+
+async function profileImportCandidateTabs() {
+  const seen = new Set();
+  const candidates = [];
+  const addTabs = (tabs) => {
+    (tabs || []).forEach((tab) => {
+      if (!tab || !tab.id || seen.has(tab.id)) return;
+      seen.add(tab.id);
+      candidates.push(tab);
+    });
+  };
+
+  try {
+    addTabs(
+      await chrome.tabs.query({
+        currentWindow: true,
+        url: [
+          "https://www.upwork.com/freelancers/~*",
+          "https://*.upwork.com/freelancers/~*",
+          "https://www.upwork.com/freelancers/settings/profile*",
+          "https://*.upwork.com/freelancers/settings/profile*"
+        ]
+      })
+    );
+  } catch (_) {
+    // URL-filtered tab queries can fail in restricted contexts; active tab is the fallback.
+  }
+
+  try {
+    addTabs(await chrome.tabs.query({ active: true, currentWindow: true }));
+  } catch (_) {
+    // No active tab fallback available.
+  }
+
+  return candidates;
 }
 
 async function loadDecisions() {
@@ -272,8 +325,7 @@ async function requestAiAnalysis(settings, prompt) {
         messages: [
           {
             role: "system",
-            content:
-              "You are a concise Upwork opportunity analyst. Focus on fit, risks, and proposal angle. Do not suggest off-platform behavior. Return Markdown."
+            content: AI_SYSTEM_PROMPT
           },
           {
             role: "user",
@@ -323,8 +375,7 @@ async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
         messages: [
           {
             role: "system",
-            content:
-              "You are a concise Upwork opportunity analyst. Focus on fit, risks, and proposal angle. Do not suggest off-platform behavior. Return Markdown."
+            content: AI_SYSTEM_PROMPT
           },
           {
             role: "user",
@@ -578,6 +629,22 @@ function messageFromError(error) {
 
 function buildPrompt(job, score, settings, options = {}) {
   const descriptionLimit = options.compact ? 1800 : 3600;
+  const useChineseAnalysis = settings && settings.language === "zh";
+  const outputInstructions = useChineseAnalysis
+    ? [
+        "Return four short Markdown sections with this exact language split:",
+        "1. 需求总结 - write in Simplified Chinese.",
+        "2. 隐藏风险 - write in Simplified Chinese.",
+        "3. Proposal angle - write in English as client-facing application strategy.",
+        "4. First 2-3 sentence opener - write in English and make it ready to paste into an Upwork proposal."
+      ]
+    : [
+        "Return four short Markdown sections:",
+        "1. Requirement summary",
+        "2. Hidden risks",
+        "3. Proposal angle",
+        "4. First 2-3 sentence opener"
+      ];
   const safeJob = {
     title: job && job.title,
     description: job && String(job.description || "").slice(0, descriptionLimit),
@@ -588,6 +655,9 @@ function buildPrompt(job, score, settings, options = {}) {
     fixedBudget: job && job.fixedBudget,
     experienceLevel: job && job.experienceLevel,
     proposalCount: job && job.proposalCount,
+    proposalCountLabel: job && job.proposalCountLabel,
+    proposalCountBucket: job && job.proposalCountBucket,
+    proposalCountIsOpenEnded: job && job.proposalCountIsOpenEnded,
     clientPaymentVerified: job && job.clientPaymentVerified,
     clientRating: job && job.clientRating,
     clientSpend: job && job.clientSpend,
@@ -619,11 +689,7 @@ function buildPrompt(job, score, settings, options = {}) {
     "",
     `Job data: ${JSON.stringify(safeJob, null, 2)}`,
     "",
-    "Return four short sections:",
-    "1. Requirement summary",
-    "2. Hidden risks",
-    "3. Proposal angle",
-    "4. First 2-3 sentence opener"
+    ...outputInstructions
   ].join("\n");
 }
 

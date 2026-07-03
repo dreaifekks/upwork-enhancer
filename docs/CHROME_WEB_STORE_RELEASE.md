@@ -101,8 +101,8 @@ Practical capture notes:
 3. Tag with the same version, prefixed with `v`.
 
 ```bash
-git tag v0.1.15
-git push origin v0.1.15
+git tag v0.1.16
+git push origin v0.1.16
 ```
 
 The GitHub Actions workflow validates, tests, packages, uploads a workflow artifact, and attaches the zip to the GitHub Release for that tag.

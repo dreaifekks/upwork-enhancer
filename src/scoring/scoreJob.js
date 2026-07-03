@@ -228,7 +228,27 @@
 
     let competitionScore = 60;
     const proposalCount = toNumber(job.proposalCount);
-    if (proposalCount !== null) {
+    const proposalCountBucket = String(job.proposalCountBucket || "");
+    const proposalCountLabel =
+      job.proposalCountLabel || (proposalCount !== null ? String(proposalCount) : "");
+    if (proposalCountBucket) {
+      if (proposalCountBucket === "low") {
+        competitionScore += 20;
+        positiveReasons.push(reason("reason.lowCompetition"));
+      } else if (proposalCountBucket === "moderate") {
+        competitionScore += 8;
+      } else if (proposalCountBucket === "high") {
+        competitionScore -= 20;
+        negativeReasons.push(
+          reason("reason.highCompetitionBucket", { count: proposalCountLabel })
+        );
+      } else if (proposalCountBucket === "extreme") {
+        competitionScore -= 35;
+        negativeReasons.push(
+          reason("reason.extremeCompetition", { count: proposalCountLabel || "50+" })
+        );
+      }
+    } else if (proposalCount !== null) {
       if (proposalCount <= 5) {
         competitionScore += 20;
         positiveReasons.push(reason("reason.lowCompetition"));
