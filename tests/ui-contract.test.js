@@ -160,8 +160,9 @@ test("inline detail review only anchors to summary content", () => {
   assert.match(contentScript, /function placeSidebar\(sidebar, placement, anchor\)/);
   assert.match(contentScript, /function ensureInlineSidebarAnchored\(sidebar, placement\)/);
   assert.match(contentScript, /UWE\.findDetailRootNode && UWE\.findDetailRootNode\(document\)/);
-  assert.match(contentScript, /placement === "inline" && !anchor && !existingSidebar/);
-  assert.match(contentScript, /placement = "floating-left"/);
+  assert.match(contentScript, /placement === "inline" && !anchor/);
+  assert.match(contentScript, /document\.querySelector\("\.uwe-sidebar"\)\?\.remove\(\);/);
+  assert.doesNotMatch(contentScript, /placement = "floating-left"/);
   assert.match(contentScript, /return isSummaryLikeElement\(element, text\);/);
   assert.match(contentScript, /ensureInlineSidebarAnchored\(sidebar, placement\);/);
   assert.doesNotMatch(contentScript, /titleBlock\.nextElementSibling/);

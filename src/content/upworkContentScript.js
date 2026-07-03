@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.16";
+  const CONTENT_SCRIPT_VERSION = "0.1.18";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -687,12 +687,12 @@
       return;
     }
 
-    let placement = detailPlacement();
+    const placement = detailPlacement();
     let anchor = placement === "inline" ? findInlineReviewAnchor() : null;
-    const existingSidebar = document.querySelector(".uwe-sidebar");
-    if (placement === "inline" && !anchor && !existingSidebar) {
-      placement = "floating-left";
-      anchor = null;
+    if (placement === "inline" && !anchor) {
+      document.querySelector(".uwe-sidebar")?.remove();
+      lastSidebarSignature = "";
+      return;
     }
     const sidebar = getSidebar(placement);
     const job = UWE.parseJobDetail(document);

@@ -210,6 +210,20 @@ test("does not split helper verbs inside unnumbered proposal questions", () => {
 
 test("distinguishes search list URLs from detail URLs", () => {
   assert.equal(
+    UWE.extractJobIdFromUrl("https://www.upwork.com/nx/search/jobs/saved/"),
+    ""
+  );
+  assert.equal(
+    UWE.extractJobIdFromUrl("https://www.upwork.com/nx/search/jobs/"),
+    ""
+  );
+  assert.equal(
+    UWE.extractJobIdFromUrl(
+      "https://www.upwork.com/nx/search/jobs/saved/details/~022072873862867873999"
+    ),
+    "~022072873862867873999"
+  );
+  assert.equal(
     UWE.isSearchListUrl("https://www.upwork.com/nx/search/jobs/saved/"),
     true
   );
@@ -226,6 +240,38 @@ test("distinguishes search list URLs from detail URLs", () => {
   assert.equal(
     UWE.isSearchListUrl("https://www.upwork.com/jobs/~022072873862867873999"),
     false
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl("https://www.upwork.com/nx/search/jobs/saved/"),
+    false
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl("https://www.upwork.com/nx/search/jobs/"),
+    false
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl(
+      "https://www.upwork.com/nx/search/jobs/saved/?__cf_chl_f_tk=abc"
+    ),
+    false
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl(
+      "https://www.upwork.com/nx/search/jobs/saved/details/~022072873862867873999"
+    ),
+    true
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl(
+      "file:///tmp/mock-upwork-saved-detail.html?referrer=/nx/search/jobs/saved/details/~022072873862867873999"
+    ),
+    true
+  );
+  assert.equal(
+    UWE.isDetailLikeUrl(
+      "https://www.upwork.com/jobs/Looking-for-full-stack-developer_~022072873862867873999/"
+    ),
+    true
   );
 });
 

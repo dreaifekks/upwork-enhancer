@@ -40,8 +40,19 @@
     const source = String(url || "");
     const tildeMatch = source.match(/~[A-Za-z0-9_]+/);
     if (tildeMatch) return tildeMatch[0];
-    const pathMatch = source.match(/\/jobs\/([^/?#]+)/);
-    if (pathMatch) return decodeURIComponent(pathMatch[1]);
+    try {
+      const parsed = new URL(
+        source,
+        root.location && root.location.href
+          ? root.location.href
+          : "https://www.upwork.com/"
+      );
+      const pathMatch = parsed.pathname.match(/^\/jobs\/([^/?#]+)/);
+      if (pathMatch) return decodeURIComponent(pathMatch[1]);
+    } catch (_) {
+      const pathMatch = source.match(/^\/jobs\/([^/?#]+)/);
+      if (pathMatch) return decodeURIComponent(pathMatch[1]);
+    }
     return "";
   }
 
@@ -801,7 +812,27 @@
   }
 
   function isDetailLikeUrl(url) {
-    return /\/jobs\//.test(url) || /\/details\/~[A-Za-z0-9_]+/.test(url);
+    const source = String(url || "");
+    const detailPathPattern = /\/details\/~[A-Za-z0-9_]+(?:[/?#&]|$)/;
+    try {
+      const parsed = new URL(
+        source,
+        root.location && root.location.href
+          ? root.location.href
+          : "https://www.upwork.com/"
+      );
+      const detailSource = `${parsed.pathname}${parsed.search}`;
+      return (
+        /^\/jobs\/[^/?#]+\/?$/.test(parsed.pathname) ||
+        detailPathPattern.test(detailSource)
+      );
+    } catch (_) {
+      return (
+        /^\/jobs\/[^/?#]+\/?$/.test(source) ||
+        /^https?:\/\/[^/]+\/jobs\/[^/?#]+\/?$/.test(source) ||
+        detailPathPattern.test(source)
+      );
+    }
   }
 
   function titleSelectorsForDetail(rootNode, currentUrl) {
@@ -1107,6 +1138,7 @@
     parseProposalSignal,
     findDetailRootNode,
     findJobCards,
+    isDetailLikeUrl,
     isSearchListUrl,
     isLikelyDetailPage,
     isLikelyProfilePage,
