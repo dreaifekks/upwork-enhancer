@@ -403,6 +403,32 @@
   gap: 7px;
 }
 
+.uwe-section-heading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.uwe-section-heading span {
+  color: var(--uwe-muted);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.uwe-question-collapsed-hint {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: var(--uwe-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.uwe-question-details[open] .uwe-question-collapsed-hint {
+  display: none;
+}
+
 .uwe-section h3 {
   margin: 0;
   color: var(--uwe-text);
@@ -437,6 +463,115 @@
   border-radius: 50%;
   background: #94a3b8;
   content: "";
+}
+
+.uwe-question-panel {
+  gap: 9px;
+}
+
+.uwe-question-details {
+  display: grid;
+  gap: 4px;
+}
+
+.uwe-question-details[open] {
+  gap: 12px;
+}
+
+.uwe-question-details > summary {
+  cursor: pointer;
+}
+
+.uwe-question-list,
+.uwe-template-list,
+.uwe-template-create {
+  display: grid;
+  gap: 8px;
+}
+
+.uwe-question-card,
+.uwe-template-item {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--uwe-border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--uwe-surface-soft);
+}
+
+.uwe-question-card__question {
+  margin: 0;
+  color: var(--uwe-text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.35;
+}
+
+.uwe-question-card__match,
+.uwe-empty,
+.uwe-template-item__actions span {
+  margin: 0;
+  color: var(--uwe-muted);
+  font-size: 11px;
+  font-weight: 640;
+  line-height: 1.35;
+}
+
+.uwe-question-card textarea,
+.uwe-template-create textarea,
+.uwe-template-item textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.uwe-question-card textarea,
+.uwe-template-create textarea,
+.uwe-template-create input,
+.uwe-template-item textarea,
+.uwe-template-item input {
+  width: 100%;
+  border: 1px solid var(--uwe-border-strong);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: var(--uwe-input);
+  color: var(--uwe-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.uwe-question-actions,
+.uwe-template-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.uwe-question-actions button,
+.uwe-template-create button,
+.uwe-template-item__actions button {
+  padding: 5px 8px;
+}
+
+.uwe-template-manager {
+  margin-top: 4px;
+  border: 1px solid var(--uwe-border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--uwe-surface-soft);
+}
+
+.uwe-template-manager summary {
+  color: var(--uwe-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.uwe-template-manager[open] {
+  display: grid;
+  gap: 9px;
 }
 
 .uwe-decision-grid {

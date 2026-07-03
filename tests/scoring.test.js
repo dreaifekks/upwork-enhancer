@@ -173,6 +173,62 @@ test("treats public proposal ranges as conservative competition buckets", () => 
   );
 });
 
+test("extracts proposal screening questions from detail text", () => {
+  const questions = UWE.parseProposalQuestions(
+    null,
+    [
+      "Summary We need a full stack developer.",
+      "You will be asked to answer the following questions when submitting a proposal:",
+      "1. Describe your approach to testing and improving QA",
+      "2. What frameworks have you worked with?",
+      "Skills and Expertise JavaScript React"
+    ].join(" ")
+  );
+
+  assert.deepEqual(questions, [
+    "Describe your approach to testing and improving QA",
+    "What frameworks have you worked with?"
+  ]);
+});
+
+test("does not split helper verbs inside unnumbered proposal questions", () => {
+  const questions = UWE.parseProposalQuestions(
+    null,
+    [
+      "You will be asked to answer the following questions when submitting a proposal:",
+      "Describe your approach to testing and improving QA",
+      "What frameworks have you worked with?",
+      "Skills and Expertise JavaScript React"
+    ].join(" ")
+  );
+
+  assert.deepEqual(questions, [
+    "Describe your approach to testing and improving QA",
+    "What frameworks have you worked with?"
+  ]);
+});
+
+test("distinguishes search list URLs from detail URLs", () => {
+  assert.equal(
+    UWE.isSearchListUrl("https://www.upwork.com/nx/search/jobs/saved/"),
+    true
+  );
+  assert.equal(
+    UWE.isSearchListUrl("https://www.upwork.com/nx/search/jobs/"),
+    true
+  );
+  assert.equal(
+    UWE.isSearchListUrl(
+      "https://www.upwork.com/nx/search/jobs/saved/details/~022072873862867873999"
+    ),
+    false
+  );
+  assert.equal(
+    UWE.isSearchListUrl("https://www.upwork.com/jobs/~022072873862867873999"),
+    false
+  );
+});
+
 test("localizes labels in English and Chinese", () => {
   assert.equal(UWE.t("en", "action.apply"), "Apply");
   assert.equal(UWE.t("zh", "action.apply"), "投递");

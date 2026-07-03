@@ -13,8 +13,10 @@
   let currentUrl = window.location.href;
   let lastSidebarSignature = "";
   let aiAnalysisState = null;
+  let questionTemplates = [];
   const detailScoreCache = new Map();
   const DETAIL_SCORE_CACHE_MAX = 30;
+  const QUESTION_TEMPLATE_MATCH_THRESHOLD = 0.38;
 
   if (document.documentElement) {
     document.documentElement.setAttribute(
@@ -696,6 +698,7 @@
     const job = UWE.parseJobDetail(document);
     const result = score(job);
     cacheDetailScore(job, result);
+    questionTemplates = await loadQuestionTemplates();
     const signature = JSON.stringify({
       jobId: result.jobId,
       title: job.title,
@@ -704,7 +707,9 @@
       language: settings.language,
       theme: currentTheme(),
       placement,
-      apiConfigured: Boolean(settings.api && settings.api.configured)
+      apiConfigured: Boolean(settings.api && settings.api.configured),
+      proposalQuestions: proposalQuestionsOf(job),
+      questionTemplates: questionTemplatesSignature(questionTemplates)
     });
     if (
       signature === lastSidebarSignature &&
@@ -741,7 +746,8 @@
       result,
       selectedAction,
       savedNote,
-      savedTags
+      savedTags,
+      questionTemplates
     );
     sidebar.classList.toggle("uwe-sidebar--collapsed", collapsed);
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
@@ -755,7 +761,14 @@
     renderAiState(sidebar);
   }
 
-  function sidebarTemplate(job, result, selectedAction, savedNote, savedTags) {
+  function sidebarTemplate(
+    job,
+    result,
+    selectedAction,
+    savedNote,
+    savedTags,
+    templates
+  ) {
     const actionLabel = t(`action.${result.recommendedAction}`);
     const reasonsFor = result.positiveReasons.map(localize);
     const reasonsAgainst = result.negativeReasons.map(localize);
@@ -794,6 +807,7 @@
         ${listSection(t("sidebar.reasonsAgainst"), reasonsAgainst)}
         ${listSection(t("sidebar.risks"), riskNotes)}
         ${listSection(t("sidebar.missing"), missingSignals)}
+        ${proposalQuestionsSection(job, templates)}
         <section class="uwe-section">
           <h3>${escapeHtml(t("sidebar.save"))}</h3>
           <div class="uwe-decision-grid">
@@ -823,6 +837,129 @@
         </section>
       </div>
     `;
+  }
+
+  function proposalQuestionsSection(job, templates) {
+    const questions = proposalQuestionsOf(job);
+    if (!questions.length) return "";
+    const safeTemplates = Array.isArray(templates) ? templates : [];
+    return `
+      <section class="uwe-section uwe-question-panel" data-uwe-question-panel>
+        <details class="uwe-question-details">
+          <summary class="uwe-section-heading">
+            <h3>${escapeHtml(t("sidebar.proposalQuestions"))}</h3>
+            <span>${escapeHtml(
+              t("sidebar.questionCount", { count: questions.length })
+            )}</span>
+            <p class="uwe-question-collapsed-hint">${escapeHtml(
+              t("sidebar.questionCollapsedHint")
+            )}</p>
+          </summary>
+          <div class="uwe-question-list">
+            ${questions
+              .map((question, index) =>
+                proposalQuestionCard(question, index, safeTemplates)
+              )
+              .join("")}
+          </div>
+          <details class="uwe-template-manager">
+            <summary>${escapeHtml(t("sidebar.manageQuestionTemplates"))}</summary>
+            <div class="uwe-template-create">
+              <input
+                type="text"
+                data-uwe-new-template-question
+                placeholder="${escapeHtml(t("sidebar.templateQuestionPlaceholder"))}"
+              />
+              <textarea
+                data-uwe-new-template-answer
+                placeholder="${escapeHtml(t("sidebar.templateAnswerPlaceholder"))}"
+              ></textarea>
+              <button type="button" data-uwe-template-create>${escapeHtml(
+                t("sidebar.addTemplate")
+              )}</button>
+            </div>
+            <div class="uwe-template-list">
+              ${safeTemplates.length
+                ? safeTemplates.map(templateEditor).join("")
+                : `<p class="uwe-empty">${escapeHtml(t("sidebar.noTemplates"))}</p>`}
+            </div>
+          </details>
+        </details>
+      </section>
+    `;
+  }
+
+  function proposalQuestionCard(question, index, templates) {
+    const match = bestQuestionTemplateMatch(question, templates);
+    const template = match && match.template ? match.template : null;
+    const answer = template ? template.answer : "";
+    const matchText = template
+      ? t("sidebar.templateMatched", {
+          percent: Math.round(match.similarity * 100)
+        })
+      : t("sidebar.templateNotMatched");
+    return `
+      <article
+        class="uwe-question-card"
+        data-uwe-question-index="${index}"
+        data-uwe-template-id="${escapeHtml(template ? template.id : "")}"
+      >
+        <p class="uwe-question-card__question">${escapeHtml(
+          `${index + 1}. ${question}`
+        )}</p>
+        <div class="uwe-question-card__match">${escapeHtml(matchText)}</div>
+        <textarea
+          data-uwe-question-answer
+          placeholder="${escapeHtml(t("sidebar.questionAnswerPlaceholder"))}"
+        >${escapeHtml(answer)}</textarea>
+        <div class="uwe-question-actions">
+          <button
+            type="button"
+            data-uwe-ai-answer
+            ${settings.api && settings.api.configured ? "" : "disabled"}
+          >${escapeHtml(t("sidebar.aiAnswer"))}</button>
+          <button type="button" data-uwe-copy-answer>${escapeHtml(
+            t("sidebar.copyAnswer")
+          )}</button>
+          <button type="button" data-uwe-save-question-template>${escapeHtml(
+            template ? t("sidebar.updateTemplate") : t("sidebar.saveTemplate")
+          )}</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function templateEditor(template) {
+    return `
+      <article class="uwe-template-item" data-uwe-template-id="${escapeHtml(
+        template.id
+      )}">
+        <input
+          type="text"
+          data-uwe-template-question
+          value="${escapeHtml(template.question)}"
+        />
+        <textarea data-uwe-template-answer>${escapeHtml(template.answer)}</textarea>
+        <div class="uwe-template-item__actions">
+          <span>${escapeHtml(templateUpdatedLabel(template))}</span>
+          <button type="button" data-uwe-template-update>${escapeHtml(
+            t("sidebar.updateTemplate")
+          )}</button>
+          <button type="button" data-uwe-template-delete>${escapeHtml(
+            t("sidebar.deleteTemplate")
+          )}</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function templateUpdatedLabel(template) {
+    if (!template || !template.updatedAt) return "";
+    const date = new Date(template.updatedAt);
+    if (Number.isNaN(date.getTime())) return "";
+    return t("sidebar.templateUpdated", {
+      date: date.toLocaleDateString()
+    });
   }
 
   function scoreRow(label, value, helpText) {
@@ -929,6 +1066,224 @@
       }
       renderAiState(sidebar);
     });
+
+    bindQuestionTemplateEvents(sidebar, job);
+  }
+
+  async function loadQuestionTemplates() {
+    const response = await sendMessage({ type: "GET_QUESTION_TEMPLATES" });
+    return response && response.ok && Array.isArray(response.templates)
+      ? response.templates
+      : [];
+  }
+
+  function bindQuestionTemplateEvents(sidebar, job) {
+    const panel = sidebar.querySelector("[data-uwe-question-panel]");
+    if (!panel) return;
+    const status = sidebar.querySelector("[data-uwe-status]");
+    const questions = proposalQuestionsOf(job);
+
+    panel.querySelectorAll("[data-uwe-question-answer]").forEach((textarea) => {
+      textarea.addEventListener("input", () => {
+        textarea.setAttribute("data-uwe-user-edited", "true");
+      });
+    });
+
+    panel.querySelectorAll("[data-uwe-ai-answer]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
+        const card = button.closest(".uwe-question-card");
+        const index = Number(card && card.getAttribute("data-uwe-question-index"));
+        const question = questions[index] || "";
+        const answer = card && card.querySelector("[data-uwe-question-answer]");
+        if (!question || !answer) return;
+
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = t("sidebar.aiAnswerLoading");
+        if (status) status.textContent = t("sidebar.aiAnswerLoading");
+
+        const match = bestQuestionTemplateMatch(question, questionTemplates);
+        const response = await sendMessage({
+          type: "AI_GENERATE_QUESTION_ANSWER",
+          job: compactJobForAi(job),
+          question,
+          template: match
+            ? {
+                matchedQuestion: match.template.question,
+                answerTemplate: match.template.answer,
+                similarity: match.similarity
+              }
+            : null
+        });
+
+        if (response && response.ok && response.text) {
+          answer.value = response.text;
+          answer.setAttribute("data-uwe-user-edited", "true");
+          if (status) status.textContent = t("sidebar.aiAnswerDone");
+        } else if (status) {
+          status.textContent = (response && response.error) || t("sidebar.aiError");
+        }
+        button.disabled = !(settings.api && settings.api.configured);
+        button.textContent = originalText;
+      });
+    });
+
+    panel.querySelectorAll("[data-uwe-copy-answer]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const card = button.closest(".uwe-question-card");
+        const answer = card && card.querySelector("[data-uwe-question-answer]");
+        const value = answer ? answer.value.trim() : "";
+        if (!value) {
+          if (status) status.textContent = t("sidebar.answerRequired");
+          return;
+        }
+        const ok = await copyText(value);
+        if (status) {
+          status.textContent = ok
+            ? t("sidebar.answerCopied")
+            : t("sidebar.copyFailed");
+        }
+      });
+    });
+
+    panel.querySelectorAll("[data-uwe-save-question-template]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const card = button.closest(".uwe-question-card");
+        const index = Number(card && card.getAttribute("data-uwe-question-index"));
+        const answer = card && card.querySelector("[data-uwe-question-answer]");
+        const question = questions[index] || "";
+        const value = answer ? answer.value.trim() : "";
+        if (!question || !value) {
+          if (status) status.textContent = t("sidebar.answerRequired");
+          return;
+        }
+        await saveQuestionTemplateAndRefresh(
+          {
+            id: card.getAttribute("data-uwe-template-id") || "",
+            question,
+            answer: value
+          },
+          "sidebar.templateSaved"
+        );
+      });
+    });
+
+    const createButton = panel.querySelector("[data-uwe-template-create]");
+    if (createButton) {
+      createButton.addEventListener("click", async () => {
+        const question = panel
+          .querySelector("[data-uwe-new-template-question]")
+          ?.value.trim();
+        const answer = panel
+          .querySelector("[data-uwe-new-template-answer]")
+          ?.value.trim();
+        if (!question || !answer) {
+          if (status) status.textContent = t("sidebar.templateFieldsRequired");
+          return;
+        }
+        await saveQuestionTemplateAndRefresh(
+          { question, answer },
+          "sidebar.templateSaved"
+        );
+      });
+    }
+
+    panel.querySelectorAll("[data-uwe-template-update]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const item = button.closest(".uwe-template-item");
+        const question = item
+          ?.querySelector("[data-uwe-template-question]")
+          ?.value.trim();
+        const answer = item
+          ?.querySelector("[data-uwe-template-answer]")
+          ?.value.trim();
+        if (!item || !question || !answer) {
+          if (status) status.textContent = t("sidebar.templateFieldsRequired");
+          return;
+        }
+        await saveQuestionTemplateAndRefresh(
+          {
+            id: item.getAttribute("data-uwe-template-id") || "",
+            question,
+            answer
+          },
+          "sidebar.templateSaved"
+        );
+      });
+    });
+
+    panel.querySelectorAll("[data-uwe-template-delete]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const item = button.closest(".uwe-template-item");
+        const id = item && item.getAttribute("data-uwe-template-id");
+        if (!id) return;
+        const response = await sendMessage({
+          type: "DELETE_QUESTION_TEMPLATE",
+          templateId: id
+        });
+        if (response && response.ok) {
+          questionTemplates = Array.isArray(response.templates)
+            ? response.templates
+            : [];
+          await refreshSidebarAfterTemplateChange("sidebar.templateDeleted");
+        } else if (status) {
+          status.textContent = (response && response.error) || "Delete failed";
+        }
+      });
+    });
+  }
+
+  async function saveQuestionTemplateAndRefresh(template, successKey) {
+    const response = await sendMessage({
+      type: "SAVE_QUESTION_TEMPLATE",
+      template
+    });
+    if (response && response.ok) {
+      questionTemplates = Array.isArray(response.templates)
+        ? response.templates
+        : questionTemplates;
+      await refreshSidebarAfterTemplateChange(successKey);
+      return;
+    }
+    const status = document.querySelector(".uwe-sidebar [data-uwe-status]");
+    if (status) {
+      status.textContent = (response && response.error) || "Template save failed";
+    }
+  }
+
+  async function refreshSidebarAfterTemplateChange(statusKey) {
+    lastSidebarSignature = "";
+    await renderDetailSidebar();
+    const status = document.querySelector(".uwe-sidebar [data-uwe-status]");
+    if (status) status.textContent = t(statusKey);
+  }
+
+  async function copyText(value) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (_) {
+      // Fall back to the selection-based copy path below.
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (_) {
+      ok = false;
+    }
+    textarea.remove();
+    return ok;
   }
 
   function startAiAnalysis(job, result) {
@@ -971,6 +1326,9 @@
     output.innerHTML = aiAnalysisState.text
       ? renderMarkdown(aiAnalysisState.text)
       : `<p>${escapeHtml(t("sidebar.aiLoading"))}</p>`;
+    if (aiAnalysisState.status === "done") {
+      fillQuestionAnswersFromAiText(sidebar, aiAnalysisState.text);
+    }
   }
 
   function aiJobKey(job, result) {
@@ -981,13 +1339,79 @@
     );
   }
 
+  function fillQuestionAnswersFromAiText(sidebar, text) {
+    const drafts = questionAnswerDraftsFromAiText(text);
+    if (!drafts.length) return;
+
+    const cards = Array.from(sidebar.querySelectorAll(".uwe-question-card"));
+    cards.forEach((card, index) => {
+      const answer = card.querySelector("[data-uwe-question-answer]");
+      if (!answer || answer.getAttribute("data-uwe-user-edited") === "true") {
+        return;
+      }
+      const question = cardQuestionText(card);
+      const matched = bestDraftForQuestion(question, drafts) || drafts[index];
+      if (!matched || !matched.answer) return;
+      answer.value = matched.answer;
+      answer.setAttribute("data-uwe-ai-filled", "true");
+    });
+  }
+
+  function cardQuestionText(card) {
+    const value =
+      card && card.querySelector(".uwe-question-card__question")
+        ? card.querySelector(".uwe-question-card__question").textContent
+        : "";
+    return UWE.cleanText(String(value || "").replace(/^\d+\.\s*/, ""));
+  }
+
+  function bestDraftForQuestion(question, drafts) {
+    let best = null;
+    drafts.forEach((draft) => {
+      const similarity = questionSimilarity(question, draft.question);
+      if (similarity < 0.45) return;
+      if (!best || similarity > best.similarity) {
+        best = { ...draft, similarity };
+      }
+    });
+    return best;
+  }
+
+  function questionAnswerDraftsFromAiText(value) {
+    const text = String(value || "").replace(/\r\n?/g, "\n");
+    const drafts = [];
+    const pattern =
+      /(?:^|\n)\s*(?:[-*]\s*|\d+\.\s*)?(?:\*\*)?Question\s*:\s*(?:\*\*)?([\s\S]*?)\s+(?:\*\*)?Draft answer\s*:\s*(?:\*\*)?([\s\S]*?)(?=\n\s*(?:[-*]\s*|\d+\.\s*)?(?:\*\*)?Question\s*:|\n#{1,6}\s+|$)/gi;
+    let match = pattern.exec(text);
+    while (match) {
+      const question = UWE.cleanText(match[1]);
+      const answer = cleanAiDraftAnswer(match[2]);
+      if (question && answer) drafts.push({ question, answer });
+      match = pattern.exec(text);
+    }
+    return drafts.slice(0, 12);
+  }
+
+  function cleanAiDraftAnswer(value) {
+    return String(value || "")
+      .replace(/\n\s*(?:[-*]\s*|\d+\.\s*)?$/, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
   function compactJobForAi(job) {
+    const proposalQuestions = proposalQuestionsOf(job);
     return {
       jobId: job.jobId,
       url: job.url,
       title: job.title,
       description: String(job.description || "").slice(0, 3600),
       skills: Array.isArray(job.skills) ? job.skills.slice(0, 24) : [],
+      proposalQuestions,
+      proposalQuestionAnswerTemplates: matchedQuestionTemplatesForAi(
+        proposalQuestions,
+        questionTemplates
+      ),
       budgetType: job.budgetType,
       hourlyMin: job.hourlyMin,
       hourlyMax: job.hourlyMax,
@@ -1020,6 +1444,103 @@
       riskNotes: result.riskNotes,
       missingSignals: result.missingSignals
     };
+  }
+
+  function proposalQuestionsOf(job) {
+    const seen = new Set();
+    return (Array.isArray(job && job.proposalQuestions) ? job.proposalQuestions : [])
+      .map((question) => UWE.cleanText(question))
+      .filter((question) => {
+        const key = normalizeQuestionForMatch(question);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 12);
+  }
+
+  function questionTemplatesSignature(templates) {
+    return (Array.isArray(templates) ? templates : [])
+      .map((template) =>
+        [
+          template.id,
+          template.updatedAt,
+          template.question,
+          String(template.answer || "").length
+        ].join(":")
+      )
+      .join("|");
+  }
+
+  function matchedQuestionTemplatesForAi(questions, templates) {
+    return questions
+      .map((question) => {
+        const match = bestQuestionTemplateMatch(question, templates);
+        if (!match || !match.template) return null;
+        return {
+          question,
+          matchedQuestion: match.template.question,
+          answerTemplate: match.template.answer,
+          similarity: Number(match.similarity.toFixed(2))
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function bestQuestionTemplateMatch(question, templates) {
+    let best = null;
+    (Array.isArray(templates) ? templates : []).forEach((template) => {
+      if (!template || !template.question || !template.answer) return;
+      const similarity = questionSimilarity(question, template.question);
+      if (similarity < QUESTION_TEMPLATE_MATCH_THRESHOLD) return;
+      if (!best || similarity > best.similarity) {
+        best = { template, similarity };
+      }
+    });
+    return best;
+  }
+
+  function questionSimilarity(left, right) {
+    const leftTokens = questionTokens(left);
+    const rightTokens = questionTokens(right);
+    if (!leftTokens.length || !rightTokens.length) return 0;
+
+    const leftKey = leftTokens.join(" ");
+    const rightKey = rightTokens.join(" ");
+    if (leftKey === rightKey) return 1;
+    if (leftKey.includes(rightKey) || rightKey.includes(leftKey)) return 0.88;
+
+    const leftSet = new Set(leftTokens);
+    const rightSet = new Set(rightTokens);
+    const intersection = Array.from(leftSet).filter((token) => rightSet.has(token))
+      .length;
+    if (!intersection) return 0;
+    const union = new Set([...leftSet, ...rightSet]).size;
+    const jaccard = intersection / union;
+    const coverage = intersection / Math.min(leftSet.size, rightSet.size);
+    return jaccard * 0.62 + coverage * 0.38;
+  }
+
+  function questionTokens(value) {
+    return normalizeQuestionForMatch(value)
+      .split(" ")
+      .map(stemQuestionToken)
+      .filter(Boolean);
+  }
+
+  function normalizeQuestionForMatch(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.]+/g, " ")
+      .replace(/\b(?:the|a|an|your|you|i|we|our|have|has|had|with|for|to|of|and|or|in|on|at|by|from|is|are|was|were|be|been|when|what|which|how|why|do|does|did|can|could|would|should|please|describe|tell|about|following|question|questions)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function stemQuestionToken(token) {
+    return String(token || "")
+      .replace(/ies$/, "y")
+      .replace(/(?:ing|ed|es|s)$/, "");
   }
 
   function escapeHtml(value) {

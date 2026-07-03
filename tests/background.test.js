@@ -42,6 +42,48 @@ test("PATCH_SETTINGS preserves the stored API key while returning public setting
   assert.equal(worker.store.uwe_settings_v1.minimumHourlyRate, 45);
 });
 
+test("question answer templates are saved, deduped, and deleted locally", async () => {
+  const worker = createServiceWorker();
+
+  const first = await worker.send({
+    type: "SAVE_QUESTION_TEMPLATE",
+    template: {
+      question: "What frameworks have you worked with?",
+      answer: "I usually work with React, Next.js, FastAPI, and Node.js."
+    }
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.templates.length, 1);
+  assert.equal(first.template.question, "What frameworks have you worked with?");
+  assert.equal(worker.store.uwe_question_templates_v1.length, 1);
+
+  const second = await worker.send({
+    type: "SAVE_QUESTION_TEMPLATE",
+    template: {
+      question: "Which frameworks have you worked with",
+      answer: "React, Next.js, FastAPI, Node.js, and PostgreSQL are my usual stack."
+    }
+  });
+
+  assert.equal(second.ok, true);
+  assert.equal(second.templates.length, 1);
+  assert.equal(second.templates[0].id, first.template.id);
+  assert.match(second.templates[0].answer, /PostgreSQL/);
+
+  const listed = await worker.send({ type: "GET_QUESTION_TEMPLATES" });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.templates.length, 1);
+
+  const deleted = await worker.send({
+    type: "DELETE_QUESTION_TEMPLATE",
+    templateId: first.template.id
+  });
+  assert.equal(deleted.ok, true);
+  assert.deepEqual(Array.from(deleted.templates), []);
+  assert.deepEqual(Array.from(worker.store.uwe_question_templates_v1), []);
+});
+
 test("IMPORT_PROFILE_FROM_ACTIVE_TAB replaces default preferences from profile and portfolio", async () => {
   const worker = createServiceWorker({
     initialStore: {
@@ -269,7 +311,19 @@ test("AI_ANALYZE retries with a compact prompt after a network failure", async (
     job: {
       title: "Build a React dashboard",
       description: "A".repeat(5000),
-      skills: ["React", "Node.js", "PostgreSQL"]
+      skills: ["React", "Node.js", "PostgreSQL"],
+      proposalQuestions: [
+        "Describe your approach to testing and improving QA",
+        "What frameworks have you worked with?"
+      ],
+      proposalQuestionAnswerTemplates: [
+        {
+          question: "What frameworks have you worked with?",
+          matchedQuestion: "Which frameworks have you worked with?",
+          answerTemplate: "React, Next.js, Node.js, FastAPI, and PostgreSQL.",
+          similarity: 0.82
+        }
+      ]
     },
     score: {
       overallScore: 82,
@@ -287,9 +341,70 @@ test("AI_ANALYZE retries with a compact prompt after a network failure", async (
   assert.match(fetchCalls[0].messages[1].content, /write in Simplified Chinese/);
   assert.match(fetchCalls[0].messages[1].content, /Proposal angle - write in English/);
   assert.match(fetchCalls[0].messages[1].content, /opener - write in English/);
+  assert.match(fetchCalls[0].messages[1].content, /Screening question answer drafts/);
+  assert.match(fetchCalls[0].messages[1].content, /Draft answer/);
+  assert.match(fetchCalls[0].messages[1].content, /What frameworks have you worked with/);
+  assert.match(fetchCalls[0].messages[1].content, /proposalQuestionAnswerTemplates/);
   assert.ok(
     fetchCalls[1].messages[1].content.length < fetchCalls[0].messages[1].content.length
   );
+});
+
+test("AI_GENERATE_QUESTION_ANSWER drafts one screening answer with template context", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1/",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        },
+        profileSummary: "Full-stack React and Python developer",
+        preferredSkills: ["React", "Python", "QA"]
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      fetchCalls.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content:
+                    "I start with the highest-risk workflows, add focused automated coverage, and pair that with manual regression checks before release."
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+  });
+
+  const response = await worker.send({
+    type: "AI_GENERATE_QUESTION_ANSWER",
+    question: "Describe your approach to testing and improving QA",
+    template: {
+      matchedQuestion: "Describe your QA process",
+      answerTemplate: "I combine automated tests with practical manual QA."
+    },
+    job: {
+      title: "React web app improvements",
+      description: "Improve UI quality and performance.",
+      skills: ["React", "Python"]
+    }
+  });
+
+  assert.equal(response.ok, true);
+  assert.match(response.text, /highest-risk workflows/);
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0].messages[1].content, /Question: Describe your approach/);
+  assert.match(fetchCalls[0].messages[1].content, /Reusable answer template/);
+  assert.match(fetchCalls[0].messages[1].content, /Write only the answer text/);
 });
 
 test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async () => {
@@ -346,7 +461,7 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].stream, true);
   assert.equal(fetchCalls[0].model, "demo-model");
-  assert.equal(fetchCalls[0].max_tokens, 1600);
+  assert.equal(fetchCalls[0].max_tokens, 2200);
   assert.deepEqual(
     JSON.parse(JSON.stringify(streamMessages.map((item) => item.message))),
     [

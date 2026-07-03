@@ -268,6 +268,130 @@
     return Array.from(new Set(values)).slice(0, 20);
   }
 
+  function parseProposalQuestions(rootNode, fullText) {
+    const localBlocks = proposalQuestionBlocks(rootNode);
+    for (const block of localBlocks) {
+      const questions =
+        parseProposalQuestionsFromDomBlock(block) ||
+        parseProposalQuestionsFromText(textOf(block));
+      if (questions.length) return questions;
+    }
+    return parseProposalQuestionsFromText(fullText);
+  }
+
+  function parseProposalQuestionsFromDomBlock(block) {
+    if (!block || !block.querySelectorAll) return null;
+    const listItems = Array.from(block.querySelectorAll("li, [role='listitem']"))
+      .filter((item) => !item.closest(".uwe-sidebar, .uwe-card-panel, .uwe-badge"))
+      .map((item) => cleanProposalQuestion(textOf(item)))
+      .filter(Boolean);
+    const uniqueItems = uniqueQuestions(listItems);
+    return uniqueItems.length ? uniqueItems.slice(0, 12) : null;
+  }
+
+  function proposalQuestionBlocks(rootNode) {
+    if (!rootNode || !rootNode.querySelectorAll) return [];
+    return Array.from(
+      rootNode.querySelectorAll(
+        "[data-test*='question'], [data-cy*='question'], section, .air3-card-section, .up-card-section, article, div"
+      )
+    )
+      .filter((element) => {
+        if (element.closest(".uwe-sidebar, .uwe-card-panel, .uwe-badge")) {
+          return false;
+        }
+        const value = textOf(element);
+        return (
+          value.length >= 70 &&
+          value.length <= 2400 &&
+          proposalQuestionMarkerPattern().test(value)
+        );
+      })
+      .sort((a, b) => textOf(a).length - textOf(b).length);
+  }
+
+  function proposalQuestionMarkerPattern() {
+    return /you will be asked to answer the following questions when submitting a proposal/i;
+  }
+
+  function parseProposalQuestionsFromText(value) {
+    const text = cleanText(value);
+    const marker = proposalQuestionMarkerPattern();
+    const markerMatch = text.match(marker);
+    if (!markerMatch || markerMatch.index === undefined) return [];
+
+    const start = markerMatch.index + markerMatch[0].length;
+    const afterMarker = text.slice(start).replace(/^[:\s]+/, "");
+    const sectionEnd = afterMarker.search(
+      /\b(?:Skills and Expertise|Activity on this job|About the client|Bid range|Average bid amounts|Project Type|Job link|Client's recent history|Other open jobs|Send a proposal)\b/i
+    );
+    const segment = cleanText(
+      sectionEnd >= 0 ? afterMarker.slice(0, sectionEnd) : afterMarker
+    );
+    if (!segment) return [];
+
+    const numberedQuestions = parseNumberedQuestions(segment);
+    if (numberedQuestions.length) return numberedQuestions;
+
+    return splitUnnumberedQuestions(segment).slice(0, 12);
+  }
+
+  function parseNumberedQuestions(segment) {
+    const matches = Array.from(segment.matchAll(/(?:^|\s)(\d{1,2})[.)]\s*/g));
+    if (!matches.length) return [];
+
+    return matches
+      .map((match, index) => {
+        const next = matches[index + 1];
+        const start = match.index + match[0].length;
+        const end = next ? next.index : segment.length;
+        return cleanProposalQuestion(segment.slice(start, end));
+      })
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+
+  function cleanProposalQuestion(value) {
+    const question = cleanText(value)
+      .replace(/^[-*•\s]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!question || question.length < 8) return "";
+    return question.slice(0, 500);
+  }
+
+  function splitUnnumberedQuestions(segment) {
+    const source = cleanText(segment);
+    if (!source) return [];
+
+    const questionMarkParts = source.match(/[^?]+\?/g);
+    if (questionMarkParts && questionMarkParts.length > 1) {
+      return uniqueQuestions(questionMarkParts.map(cleanProposalQuestion));
+    }
+
+    const parts = source
+      .split(
+        /\s+(?=(?:Describe|What|Which|How|Why|When|Where|Do|Does|Did|Can|Could|Would|Tell)\b)/i
+      )
+      .map(cleanProposalQuestion)
+      .filter(Boolean);
+    return uniqueQuestions(parts.length ? parts : [source]);
+  }
+
+  function uniqueQuestions(questions) {
+    const seen = new Set();
+    return (questions || []).filter((question) => {
+      const key = question
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function classifyJobCardContextText(value) {
     const text = cleanText(value);
     if (!text) return "";
@@ -506,6 +630,7 @@
       url,
       description: text,
       skills: parseSkills(rootNode),
+      proposalQuestions: parseProposalQuestions(rootNode, text),
       budgetType: hourly.budgetType || fixedBudget.budgetType || "",
       hourlyMin: hourly.hourlyMin || null,
       hourlyMax: hourly.hourlyMax || null,
@@ -633,13 +758,34 @@
     return candidates[0] ? candidates[0].node : null;
   }
 
-  function findDetailRootNode(doc) {
+  function explicitDetailRootNode(doc) {
+    if (!doc || !doc.querySelector) return null;
     return (
       doc.querySelector(".air3-slider-job-details .job-details-content") ||
       doc.querySelector(".air3-slider-job-details") ||
-      doc.querySelector("[data-test='job-details']") ||
-      doc.querySelector("[data-test*='job-detail']") ||
+      doc.querySelector("[data-test='job-details']")
+    );
+  }
+
+  function isSearchListUrl(url) {
+    try {
+      const parsed = new URL(url, "https://www.upwork.com");
+      return /^\/nx\/search\/jobs(?:\/saved)?\/?$/.test(parsed.pathname);
+    } catch (_) {
+      return /\/nx\/search\/jobs(?:\/saved)?\/?(?:$|[?#])/i.test(
+        String(url || "")
+      );
+    }
+  }
+
+  function findDetailRootNode(doc) {
+    const currentUrl = documentUrl(doc);
+    return (
+      explicitDetailRootNode(doc) ||
       detailRootFromCurrentJobId(doc) ||
+      (isDetailLikeUrl(currentUrl)
+        ? doc.querySelector("[data-test*='job-detail']")
+        : null) ||
       doc.querySelector("main") ||
       doc.body
     );
@@ -926,15 +1072,19 @@
   function isLikelyDetailPage(doc) {
     const currentUrl = documentUrl(doc);
     const urlLooksDetail = isDetailLikeUrl(currentUrl);
-    const rootNode = findDetailRootNode(doc);
-    const hasDetailContainer = Boolean(
-      doc.querySelector(
-        "[data-test='job-details'], [data-test*='job-detail'], .air3-slider-job-details, .job-details-content"
-      )
+    const explicitRoot = explicitDetailRootNode(doc);
+    const currentJobRoot = detailRootFromCurrentJobId(doc);
+    const hasDetailContext = Boolean(
+      urlLooksDetail ||
+        currentJobRoot ||
+        (explicitRoot &&
+          (isSliderDetailRoot(explicitRoot) || !isSearchListUrl(currentUrl)))
     );
+    const rootNode =
+      currentJobRoot || explicitRoot || (urlLooksDetail ? findDetailRootNode(doc) : null);
     const hasDomTitle = Boolean(rootNode && firstDetailTitle(rootNode, currentUrl));
     const hasDocumentTitle = Boolean(
-      (urlLooksDetail || hasDetailContainer) &&
+      hasDetailContext &&
         cleanText(doc.title).length >= 12 &&
         !/Upwork\s*$/i.test(cleanText(doc.title)) &&
         !/Freelancer from/i.test(cleanText(doc.title))
@@ -943,7 +1093,7 @@
     const hasDetailText = /payment verified|proposals?|fixed-price|hourly|client/i.test(
       textOf(rootNode || doc.querySelector("main") || doc.body)
     );
-    return (urlLooksDetail || hasDetailContainer) && hasTitle && hasDetailText;
+    return hasDetailContext && hasTitle && hasDetailText;
   }
 
   const api = {
@@ -953,9 +1103,11 @@
     detectJobCardContext,
     parseJobCard,
     parseJobDetail,
+    parseProposalQuestions,
     parseProposalSignal,
     findDetailRootNode,
     findJobCards,
+    isSearchListUrl,
     isLikelyDetailPage,
     isLikelyProfilePage,
     parseFreelancerProfile

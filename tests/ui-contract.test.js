@@ -75,6 +75,36 @@ test("content script supports anchored detail panel and theme classes", () => {
   assert.match(css, /@media \(max-width: 980px\)/);
 });
 
+test("content script supports proposal question templates", () => {
+  const defaults = readFileSync("src/shared/defaultSettings.js", "utf8");
+  const parser = readFileSync("src/content/upworkParser.js", "utf8");
+  const contentScript = readFileSync("src/content/upworkContentScript.js", "utf8");
+  const background = readFileSync("src/background/serviceWorker.js", "utf8");
+  const css = readFileSync("src/content/upworkContentScript.css", "utf8");
+
+  assert.match(defaults, /QUESTION_TEMPLATES_STORAGE_KEY/);
+  assert.match(parser, /function parseProposalQuestions/);
+  assert.match(parser, /proposalQuestions:\s*parseProposalQuestions/);
+  assert.match(contentScript, /GET_QUESTION_TEMPLATES/);
+  assert.match(contentScript, /SAVE_QUESTION_TEMPLATE/);
+  assert.match(contentScript, /DELETE_QUESTION_TEMPLATE/);
+  assert.match(contentScript, /AI_GENERATE_QUESTION_ANSWER/);
+  assert.match(contentScript, /data-uwe-ai-answer/);
+  assert.match(contentScript, /fillQuestionAnswersFromAiText/);
+  assert.match(contentScript, /bestQuestionTemplateMatch/);
+  assert.match(contentScript, /proposalQuestionAnswerTemplates/);
+  assert.match(contentScript, /class="uwe-question-details"/);
+  assert.match(contentScript, /sidebar\.questionCollapsedHint/);
+  assert.match(background, /case "SAVE_QUESTION_TEMPLATE"/);
+  assert.match(background, /case "AI_GENERATE_QUESTION_ANSWER"/);
+  assert.match(background, /proposalQuestions/);
+  assert.match(background, /buildQuestionAnswerPrompt/);
+  assert.match(css, /uwe-question-panel/);
+  assert.match(css, /uwe-question-collapsed-hint/);
+  assert.match(css, /uwe-question-details\[open\]/);
+  assert.match(css, /uwe-template-manager/);
+});
+
 test("profile parser can persist a public freelancer profile URL", () => {
   const parser = readFileSync("src/content/upworkParser.js", "utf8");
 

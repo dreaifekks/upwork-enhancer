@@ -3,6 +3,7 @@
 
   const SETTINGS_STORAGE_KEY = "uwe_settings_v1";
   const DECISIONS_STORAGE_KEY = "uwe_decisions_v1";
+  const QUESTION_TEMPLATES_STORAGE_KEY = "uwe_question_templates_v1";
 
   const DEFAULT_SETTINGS = {
     language: "en",
@@ -328,6 +329,7 @@
   const api = {
     SETTINGS_STORAGE_KEY,
     DECISIONS_STORAGE_KEY,
+    QUESTION_TEMPLATES_STORAGE_KEY,
     DEFAULT_SETTINGS,
     normalizeSettings,
     normalizeProfileUrl,

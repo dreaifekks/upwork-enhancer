@@ -241,6 +241,52 @@ test("renders saved-job detail preview with h4 title", (t) => {
   }
 });
 
+test("does not render detail review on saved search list cards", (t) => {
+  if (process.env.UWE_RUN_BROWSER_SMOKE !== "1") {
+    t.skip("set UWE_RUN_BROWSER_SMOKE=1 to run the local Chrome fixture render");
+    return;
+  }
+
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("Chrome executable not found for rendered fixture smoke test");
+    return;
+  }
+
+  const profileDir = mkdtempSync(join(tmpdir(), "uwe-chrome-profile-"));
+  try {
+    const fixtureUrl = `file://${resolve("tests/fixtures/mock-upwork-saved-list.html")}`;
+    const result = spawnSync(
+      chrome,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--allow-file-access-from-files",
+        `--user-data-dir=${profileDir}`,
+        "--virtual-time-budget=2000",
+        "--dump-dom",
+        fixtureUrl
+      ],
+      {
+        encoding: "utf8",
+        timeout: 15000
+      }
+    );
+
+    assert.equal(
+      result.status,
+      0,
+      result.stderr || result.stdout || "Chrome saved list fixture render failed"
+    );
+    assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
+    assert.doesNotMatch(result.stdout, /class="uwe-sidebar/);
+  } finally {
+    rmSync(profileDir, { recursive: true, force: true });
+  }
+});
+
 test("parses visible freelancer profile data", (t) => {
   if (process.env.UWE_RUN_BROWSER_SMOKE !== "1") {
     t.skip("set UWE_RUN_BROWSER_SMOKE=1 to run the local Chrome fixture render");

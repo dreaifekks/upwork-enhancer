@@ -1,8 +1,11 @@
 importScripts("../shared/defaultSettings.js");
 
 const UWE = self.UpworkEnhancer;
-const AI_MAX_TOKENS = 1600;
+const AI_MAX_TOKENS = 2200;
 const AI_STREAM_TIMEOUT_MS = 90000;
+const QUESTION_TEMPLATE_LIMIT = 120;
+const QUESTION_TEMPLATE_QUESTION_LIMIT = 600;
+const QUESTION_TEMPLATE_ANSWER_LIMIT = 5000;
 const AI_SYSTEM_PROMPT = [
   "You are a concise Upwork opportunity analyst.",
   "Focus on fit, risks, and proposal angle.",
@@ -60,11 +63,24 @@ async function handleMessage(message, sender) {
       await chrome.storage.local.set({ [UWE.DECISIONS_STORAGE_KEY]: decisions });
       return { ok: true, decision };
     }
+    case "GET_QUESTION_TEMPLATES": {
+      const templates = await loadQuestionTemplates();
+      return { ok: true, templates };
+    }
+    case "SAVE_QUESTION_TEMPLATE": {
+      return await saveQuestionTemplate(message.template);
+    }
+    case "DELETE_QUESTION_TEMPLATE": {
+      return await deleteQuestionTemplate(message.templateId);
+    }
     case "AI_ANALYZE": {
       return await analyzeWithAi(message.job, message.score);
     }
     case "AI_ANALYZE_STREAM": {
       return await analyzeWithAiStream(message, sender);
+    }
+    case "AI_GENERATE_QUESTION_ANSWER": {
+      return await generateQuestionAnswer(message);
     }
     case "TEST_AI_CONFIG": {
       return await testAiConfig();
@@ -249,6 +265,101 @@ function sanitizeDecision(input) {
   };
 }
 
+async function loadQuestionTemplates() {
+  const stored = await chrome.storage.local.get(UWE.QUESTION_TEMPLATES_STORAGE_KEY);
+  const templates = stored[UWE.QUESTION_TEMPLATES_STORAGE_KEY];
+  if (!Array.isArray(templates)) return [];
+  return templates
+    .map((template) => sanitizeQuestionTemplate(template))
+    .filter((template) => template.question && template.answer)
+    .sort(sortTemplatesByFreshness)
+    .slice(0, QUESTION_TEMPLATE_LIMIT);
+}
+
+async function saveQuestionTemplate(input) {
+  const current = await loadQuestionTemplates();
+  const now = new Date().toISOString();
+  const template = sanitizeQuestionTemplate(input, now);
+  if (!template.question) {
+    return { ok: false, error: "Question is required" };
+  }
+  if (!template.answer) {
+    return { ok: false, error: "Answer template is required" };
+  }
+
+  const questionKey = normalizeTemplateQuestion(template.question);
+  const next = current.filter((item) => {
+    if (template.id && item.id === template.id) return false;
+    return normalizeTemplateQuestion(item.question) !== questionKey;
+  });
+  const existing =
+    current.find((item) => template.id && item.id === template.id) ||
+    current.find((item) => normalizeTemplateQuestion(item.question) === questionKey);
+  const saved = {
+    ...template,
+    id: template.id || (existing && existing.id) || createTemplateId(),
+    createdAt: (existing && existing.createdAt) || template.createdAt || now,
+    updatedAt: now,
+    useCount: Number(existing && existing.useCount) || Number(template.useCount) || 0
+  };
+  next.unshift(saved);
+  const templates = next.sort(sortTemplatesByFreshness).slice(0, QUESTION_TEMPLATE_LIMIT);
+  await chrome.storage.local.set({
+    [UWE.QUESTION_TEMPLATES_STORAGE_KEY]: templates
+  });
+  return { ok: true, template: saved, templates };
+}
+
+async function deleteQuestionTemplate(templateId) {
+  const id = String(templateId || "");
+  if (!id) return { ok: false, error: "Template id is required" };
+  const current = await loadQuestionTemplates();
+  const templates = current.filter((template) => template.id !== id);
+  await chrome.storage.local.set({
+    [UWE.QUESTION_TEMPLATES_STORAGE_KEY]: templates
+  });
+  return { ok: true, templates };
+}
+
+function sanitizeQuestionTemplate(input, fallbackTimestamp) {
+  const source = input && typeof input === "object" ? input : {};
+  const timestamp = fallbackTimestamp || new Date().toISOString();
+  return {
+    id: String(source.id || "").slice(0, 80),
+    question: String(source.question || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, QUESTION_TEMPLATE_QUESTION_LIMIT),
+    answer: String(source.answer || "")
+      .replace(/\r\n?/g, "\n")
+      .trim()
+      .slice(0, QUESTION_TEMPLATE_ANSWER_LIMIT),
+    tags: Array.isArray(source.tags) ? source.tags.map(String).slice(0, 12) : [],
+    createdAt: String(source.createdAt || timestamp),
+    updatedAt: String(source.updatedAt || timestamp),
+    useCount: Number.isFinite(Number(source.useCount)) ? Number(source.useCount) : 0
+  };
+}
+
+function normalizeTemplateQuestion(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .replace(/\b(?:the|a|an|your|you|have|has|had|with|for|to|of|and|or|in|on|at|when|what|which|how|why|do|does|did|can|could|would|please|describe|tell|about)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sortTemplatesByFreshness(a, b) {
+  return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+}
+
+function createTemplateId() {
+  return `qt_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
+}
+
 async function analyzeWithAi(job, score) {
   const settings = await loadSettings();
   if (!isAiConfigured(settings)) {
@@ -302,6 +413,48 @@ async function analyzeWithAiStream(message, sender) {
       return { ok: false, error };
     }
   }
+}
+
+async function generateQuestionAnswer(message) {
+  const settings = await loadSettings();
+  if (!isAiConfigured(settings)) {
+    return { ok: false, error: "AI is not configured" };
+  }
+  const question = String((message && message.question) || "").trim();
+  if (!question) {
+    return { ok: false, error: "Question is required" };
+  }
+
+  try {
+    const response = await requestAiAnalysis(
+      settings,
+      buildQuestionAnswerPrompt({
+        job: message && message.job,
+        question,
+        template: message && message.template,
+        settings
+      })
+    );
+    return {
+      ok: response.ok,
+      text: cleanGeneratedQuestionAnswer(response.text),
+      error: response.error
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `AI request failed: ${messageFromError(error)}`
+    };
+  }
+}
+
+function cleanGeneratedQuestionAnswer(value) {
+  return String(value || "")
+    .replace(/^```(?:\w+)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .replace(/^\s*(?:answer|draft answer)\s*:\s*/i, "")
+    .trim()
+    .slice(0, QUESTION_TEMPLATE_ANSWER_LIMIT);
 }
 
 async function requestAiAnalysis(settings, prompt) {
@@ -632,23 +785,41 @@ function buildPrompt(job, score, settings, options = {}) {
   const useChineseAnalysis = settings && settings.language === "zh";
   const outputInstructions = useChineseAnalysis
     ? [
-        "Return four short Markdown sections with this exact language split:",
+        "Return these short Markdown sections with this exact language split:",
         "1. 需求总结 - write in Simplified Chinese.",
         "2. 隐藏风险 - write in Simplified Chinese.",
         "3. Proposal angle - write in English as client-facing application strategy.",
-        "4. First 2-3 sentence opener - write in English and make it ready to paste into an Upwork proposal."
+        "4. First 2-3 sentence opener - write in English and make it ready to paste into an Upwork proposal.",
+        "5. If Job data includes proposalQuestions, add Screening question answer drafts - write in English, answer each question directly, and reuse proposalQuestionAnswerTemplates when relevant. Use this exact item format for each answer: **Question:** <question> then **Draft answer:** <answer>."
       ]
     : [
-        "Return four short Markdown sections:",
+        "Return these short Markdown sections:",
         "1. Requirement summary",
         "2. Hidden risks",
         "3. Proposal angle",
-        "4. First 2-3 sentence opener"
+        "4. First 2-3 sentence opener",
+        "5. If Job data includes proposalQuestions, add Screening question answer drafts with direct English answers; reuse proposalQuestionAnswerTemplates when relevant. Use this exact item format for each answer: **Question:** <question> then **Draft answer:** <answer>."
       ];
   const safeJob = {
     title: job && job.title,
     description: job && String(job.description || "").slice(0, descriptionLimit),
     skills: job && Array.isArray(job.skills) ? job.skills.slice(0, 24) : [],
+    proposalQuestions:
+      job && Array.isArray(job.proposalQuestions)
+        ? job.proposalQuestions.map(String).filter(Boolean).slice(0, 12)
+        : [],
+    proposalQuestionAnswerTemplates:
+      job && Array.isArray(job.proposalQuestionAnswerTemplates)
+        ? job.proposalQuestionAnswerTemplates
+            .map((item) => ({
+              question: item && item.question,
+              matchedQuestion: item && item.matchedQuestion,
+              answerTemplate: item && item.answerTemplate,
+              similarity: item && item.similarity
+            }))
+            .filter((item) => item.question && item.answerTemplate)
+            .slice(0, 12)
+        : [],
     budgetType: job && job.budgetType,
     hourlyMin: job && job.hourlyMin,
     hourlyMax: job && job.hourlyMax,
@@ -690,6 +861,42 @@ function buildPrompt(job, score, settings, options = {}) {
     `Job data: ${JSON.stringify(safeJob, null, 2)}`,
     "",
     ...outputInstructions
+  ].join("\n");
+}
+
+function buildQuestionAnswerPrompt({ job, question, template, settings }) {
+  const safeJob = {
+    title: job && job.title,
+    description: job && String(job.description || "").slice(0, 2200),
+    skills: job && Array.isArray(job.skills) ? job.skills.slice(0, 24) : [],
+    budgetType: job && job.budgetType,
+    hourlyMin: job && job.hourlyMin,
+    hourlyMax: job && job.hourlyMax,
+    fixedBudget: job && job.fixedBudget,
+    experienceLevel: job && job.experienceLevel
+  };
+  const safeTemplate =
+    template && typeof template === "object"
+      ? {
+          matchedQuestion: template.matchedQuestion || template.question || "",
+          answerTemplate: template.answerTemplate || template.answer || ""
+        }
+      : null;
+
+  return [
+    "Draft a concise Upwork screening-question answer for this freelancer.",
+    "Write only the answer text in polished English. Do not include a heading, label, markdown table, greeting, or sign-off.",
+    "Be specific to the job and honest about capabilities. Do not invent credentials, employers, metrics, or unavailable experience.",
+    "If a reusable answer template is provided, adapt it to this job instead of copying it blindly.",
+    "",
+    `Freelancer profile: ${settings.profileSummary || "Not configured."}`,
+    `Preferred skills: ${settings.preferredSkills.join(", ")}`,
+    "",
+    `Question: ${question}`,
+    "",
+    `Reusable answer template: ${JSON.stringify(safeTemplate, null, 2)}`,
+    "",
+    `Job data: ${JSON.stringify(safeJob, null, 2)}`
   ].join("\n");
 }
 
