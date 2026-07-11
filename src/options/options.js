@@ -14,7 +14,9 @@
 
   let settings = UWE.normalizeSettings(UWE.DEFAULT_SETTINGS);
 
-  init();
+  init().catch((error) => {
+    setStatus(error && error.message ? error.message : String(error));
+  });
 
   async function init() {
     initTagEditors();
@@ -24,6 +26,7 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!validateThresholdOrder()) return;
       const next = readForm();
       const permissionGranted = await requestApiPermission(next);
       if (!permissionGranted) {
@@ -76,6 +79,7 @@
     });
 
     testAi.addEventListener("click", async () => {
+      if (!validateThresholdOrder()) return;
       const next = readForm();
       const permissionGranted = await requestApiPermission(next);
       if (!permissionGranted) {
@@ -101,6 +105,10 @@
 
     theme.addEventListener("change", () => {
       applyTheme(theme.value);
+    });
+
+    ["thresholdApply", "thresholdWatch", "thresholdPass"].forEach((name) => {
+      form.elements[name].addEventListener("input", validateThresholdOrder);
     });
   }
 
@@ -210,6 +218,29 @@
         apiKey: current.get("apiKey")
       }
     });
+  }
+
+  function validateThresholdOrder() {
+    const apply = form.elements.thresholdApply;
+    const watch = form.elements.thresholdWatch;
+    const pass = form.elements.thresholdPass;
+    [apply, watch, pass].forEach((field) => field.setCustomValidity(""));
+    const values = [apply, watch, pass].map((field) => field.value.trim());
+    const valid =
+      values.every((value) => value !== "" && Number.isFinite(Number(value))) &&
+      Number(apply.value) >= Number(watch.value) &&
+      Number(watch.value) >= Number(pass.value);
+    if (valid) {
+      if (status.textContent === UWE.t(language.value, "options.thresholdOrderError")) {
+        setStatus("");
+      }
+      return true;
+    }
+    const message = UWE.t(language.value, "options.thresholdOrderError");
+    [apply, watch, pass].forEach((field) => field.setCustomValidity(message));
+    setStatus(message);
+    apply.reportValidity();
+    return false;
   }
 
   function initTagEditors() {

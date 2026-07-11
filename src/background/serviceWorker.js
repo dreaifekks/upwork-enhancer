@@ -15,6 +15,13 @@ const AI_SYSTEM_PROMPT = [
   "Return Markdown."
 ].join(" ");
 
+if (chrome.storage && chrome.storage.local && chrome.storage.local.setAccessLevel) {
+  Promise.resolve(
+    chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+  )
+    .catch(() => null);
+}
+
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
 });
@@ -32,6 +39,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleMessage(message, sender) {
+  authorizeMessage(message, sender);
   switch (message && message.type) {
     case "GET_PUBLIC_SETTINGS": {
       const settings = await loadSettings();
@@ -87,6 +95,43 @@ async function handleMessage(message, sender) {
     }
     default:
       return { ok: false, error: "Unknown message type" };
+  }
+}
+
+const CONTENT_MESSAGE_TYPES = new Set([
+  "GET_PUBLIC_SETTINGS",
+  "GET_DECISION",
+  "SAVE_DECISION",
+  "GET_QUESTION_TEMPLATES",
+  "SAVE_QUESTION_TEMPLATE",
+  "DELETE_QUESTION_TEMPLATE",
+  "AI_ANALYZE",
+  "AI_ANALYZE_STREAM",
+  "AI_GENERATE_QUESTION_ANSWER"
+]);
+
+function authorizeMessage(message, sender) {
+  if (
+    sender &&
+    sender.id &&
+    chrome.runtime.id &&
+    sender.id !== chrome.runtime.id
+  ) {
+    throw new Error("Unauthorized extension sender.");
+  }
+  if (!sender || !sender.tab) return;
+  const senderUrl = String(sender.url || sender.tab.url || "");
+  let hostname = "";
+  try {
+    hostname = new URL(senderUrl).hostname;
+  } catch (_) {
+    throw new Error("Unauthorized page sender.");
+  }
+  if (!(hostname === "upwork.com" || hostname.endsWith(".upwork.com"))) {
+    throw new Error("Unauthorized page sender.");
+  }
+  if (!CONTENT_MESSAGE_TYPES.has(message && message.type)) {
+    throw new Error("Message type is not available to page content.");
   }
 }
 
@@ -188,12 +233,14 @@ async function importProfileFromActiveTab() {
     profileUrl: profile.profileUrl,
     profileUpdatedAt: profile.updatedAt,
     profileSnapshot: profile,
-    preferredSkills: derivedPreferredSkills.length
-      ? derivedPreferredSkills
-      : current.preferredSkills,
-    preferredProjectTypes: derivedProjectTypes.length
-      ? derivedProjectTypes
-      : current.preferredProjectTypes
+    preferredSkills: mergePreferenceLists(
+      current.preferredSkills,
+      derivedPreferredSkills
+    ),
+    preferredProjectTypes: mergePreferenceLists(
+      current.preferredProjectTypes,
+      derivedProjectTypes
+    )
   });
   const publicSettings = await saveSettings(next);
   return {
@@ -201,6 +248,19 @@ async function importProfileFromActiveTab() {
     profile,
     settings: publicSettings
   };
+}
+
+function mergePreferenceLists(currentValues, derivedValues) {
+  const result = [];
+  const seen = new Set();
+  [...(currentValues || []), ...(derivedValues || [])].forEach((value) => {
+    const text = String(value || "").trim();
+    const key = text.toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    result.push(text);
+  });
+  return result;
 }
 
 async function profileImportCandidateTabs() {
@@ -400,6 +460,13 @@ async function analyzeWithAiStream(message, sender) {
       requestId
     );
   } catch (firstError) {
+    if (firstError && firstError.aiStreamEmitted) {
+      const error = `AI request failed after partial output: ${messageFromError(
+        firstError
+      )}`;
+      await sendAiStreamEvent(sender, requestId, { error, done: true });
+      return { ok: false, error };
+    }
     try {
       return await requestAiAnalysisStream(
         settings,
@@ -512,6 +579,7 @@ async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_STREAM_TIMEOUT_MS);
 
+  let emittedText = false;
   try {
     const response = await fetch(endpoint, {
       method: "POST",
@@ -559,6 +627,7 @@ async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
       const deltas = parseSseRecord(record);
       for (const delta of deltas) {
         text += delta;
+        emittedText = true;
         await sendAiStreamEvent(sender, requestId, { delta });
       }
     };
@@ -582,6 +651,11 @@ async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
     text = text.trim();
     await sendAiStreamEvent(sender, requestId, { text, done: true });
     return { ok: true, text };
+  } catch (error) {
+    if (error && typeof error === "object") {
+      error.aiStreamEmitted = emittedText;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

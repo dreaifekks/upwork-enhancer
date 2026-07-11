@@ -1,5 +1,5 @@
 (function attachContentScript(root) {
-  const CONTENT_SCRIPT_VERSION = "0.1.18";
+  const CONTENT_SCRIPT_VERSION = "0.1.19";
   const UWE = root.UpworkEnhancer || {};
   const runtime =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage
@@ -10,11 +10,20 @@
     ? UWE.publicSettings(UWE.DEFAULT_SETTINGS)
     : UWE.DEFAULT_SETTINGS;
   let renderTimer = null;
+  let listRenderHandle = null;
+  let listRenderUsesIdleCallback = false;
   let currentUrl = window.location.href;
   let lastSidebarSignature = "";
   let aiAnalysisState = null;
   let questionTemplates = [];
+  let questionTemplatesLoaded = false;
+  let questionTemplatesPromise = null;
+  let detailRenderGeneration = 0;
+  let sidebarCollapsed = true;
+  let aiRenderTimer = null;
   const detailScoreCache = new Map();
+  const listJobCache = new Map();
+  const detailDraftCache = new Map();
   const DETAIL_SCORE_CACHE_MAX = 30;
   const QUESTION_TEMPLATE_MATCH_THRESHOLD = 0.38;
 
@@ -159,7 +168,22 @@
       aiAnalysisState.error = "";
     }
 
-    renderAiState(document.querySelector(".uwe-sidebar"));
+    scheduleAiRender(Boolean(message.error || message.done));
+  }
+
+  function scheduleAiRender(immediate) {
+    if (aiRenderTimer) {
+      window.clearTimeout(aiRenderTimer);
+      aiRenderTimer = null;
+    }
+    if (immediate) {
+      renderAiState(document.querySelector(".uwe-sidebar"));
+      return;
+    }
+    aiRenderTimer = window.setTimeout(() => {
+      aiRenderTimer = null;
+      renderAiState(document.querySelector(".uwe-sidebar"));
+    }, 60);
   }
 
   if (runtime && runtime.onMessage) {
@@ -233,7 +257,12 @@
       clientQualityScore: result.clientQualityScore,
       competitionScore: result.competitionScore,
       riskScore: result.riskScore,
-      riskLevel: result.riskLevel
+      riskLevel: result.riskLevel,
+      actionGateReason: result.actionGateReason,
+      positiveReasons: result.positiveReasons,
+      negativeReasons: result.negativeReasons,
+      riskNotes: result.riskNotes,
+      missingSignals: result.missingSignals
     });
   }
 
@@ -265,6 +294,87 @@
     for (const key of keys) {
       const entry = detailScoreCache.get(key);
       if (entry) return entry;
+    }
+    return null;
+  }
+
+  function cacheListJob(job) {
+    const keys = detailCacheKeys(job, { jobId: job && job.jobId });
+    keys.forEach((key) => {
+      listJobCache.delete(key);
+      listJobCache.set(key, job);
+    });
+    while (listJobCache.size > DETAIL_SCORE_CACHE_MAX * 2) {
+      listJobCache.delete(listJobCache.keys().next().value);
+    }
+  }
+
+  function cachedListJobForJob(job) {
+    const keys = detailCacheKeys(job, { jobId: job && job.jobId });
+    for (const key of keys) {
+      const cached = listJobCache.get(key);
+      if (cached) return cached;
+    }
+    return null;
+  }
+
+  function captureSidebarDraft(sidebar) {
+    if (!sidebar || !sidebar.querySelector(".uwe-sidebar__body")) return;
+    const key = sidebar.getAttribute("data-uwe-draft-job-key") || "";
+    if (!key) return;
+    const selected = sidebar.querySelector(
+      '[data-uwe-decision][aria-pressed="true"]'
+    );
+    const questionDetails = sidebar.querySelector(".uwe-question-details");
+    const templateManager = sidebar.querySelector(".uwe-template-manager");
+    const draft = {
+      selectedAction: selected && selected.getAttribute("data-uwe-decision"),
+      note: sidebar.querySelector("[data-uwe-note]")?.value || "",
+      tags: sidebar.querySelector("[data-uwe-tags]")?.value || "",
+      answers: Array.from(
+        sidebar.querySelectorAll("[data-uwe-question-answer]")
+      ).map((element) => ({
+        value: element.value,
+        userEdited: element.getAttribute("data-uwe-user-edited") === "true"
+      })),
+      questionsOpen: Boolean(questionDetails && questionDetails.open),
+      templatesOpen: Boolean(templateManager && templateManager.open)
+    };
+    detailDraftCache.delete(key);
+    detailDraftCache.set(key, draft);
+    while (detailDraftCache.size > DETAIL_SCORE_CACHE_MAX) {
+      detailDraftCache.delete(detailDraftCache.keys().next().value);
+    }
+  }
+
+  function restoreSidebarDraft(sidebar, draft) {
+    if (!sidebar || !draft) return;
+    const questionDetails = sidebar.querySelector(".uwe-question-details");
+    const templateManager = sidebar.querySelector(".uwe-template-manager");
+    if (questionDetails) questionDetails.open = Boolean(draft.questionsOpen);
+    if (templateManager) templateManager.open = Boolean(draft.templatesOpen);
+    Array.from(sidebar.querySelectorAll("[data-uwe-question-answer]")).forEach(
+      (element, index) => {
+        const answer = draft.answers && draft.answers[index];
+        if (!answer) return;
+        element.value = answer.value;
+        if (answer.userEdited) {
+          element.setAttribute("data-uwe-user-edited", "true");
+        }
+      }
+    );
+  }
+
+  function discoverListJobForDetail(job) {
+    const expectedKeys = new Set(detailCacheKeys(job, { jobId: job && job.jobId }));
+    if (!expectedKeys.size) return null;
+    const detailRoot = findDetailRoot();
+    for (const card of UWE.findJobCards(document)) {
+      if (detailRoot && (card === detailRoot || detailRoot.contains(card))) continue;
+      const candidate = UWE.parseJobCard(card);
+      cacheListJob(candidate);
+      const candidateKeys = detailCacheKeys(candidate, { jobId: candidate.jobId });
+      if (candidateKeys.some((key) => expectedKeys.has(key))) return candidate;
     }
     return null;
   }
@@ -356,6 +466,7 @@
     }
 
     const job = UWE.parseJobCard(card);
+    cacheListJob(job);
     const cachedScore = cachedDetailScoreForJob(job);
     const result = cachedScore ? cachedScore.result : score(job);
     const panel = existing || document.createElement("div");
@@ -435,7 +546,9 @@
   }
 
   function invalidateRenderedScores() {
+    cancelListRender();
     detailScoreCache.clear();
+    listJobCache.clear();
     document.querySelectorAll("[data-uwe-text]").forEach((element) => {
       element.removeAttribute("data-uwe-text");
     });
@@ -681,6 +794,8 @@
   }
 
   async function renderDetailSidebar() {
+    const generation = ++detailRenderGeneration;
+    captureSidebarDraft(document.querySelector(".uwe-sidebar"));
     if (!UWE.isLikelyDetailPage(document)) {
       document.querySelector(".uwe-sidebar")?.remove();
       lastSidebarSignature = "";
@@ -695,15 +810,20 @@
       return;
     }
     const sidebar = getSidebar(placement);
-    const job = UWE.parseJobDetail(document);
+    const parsedJob = UWE.parseJobDetail(document);
+    const listJob =
+      cachedListJobForJob(parsedJob) || discoverListJobForDetail(parsedJob);
+    const job = UWE.mergeJobSignals
+      ? UWE.mergeJobSignals(parsedJob, listJob)
+      : parsedJob;
     const result = score(job);
     cacheDetailScore(job, result);
-    questionTemplates = await loadQuestionTemplates();
+    questionTemplates = await ensureQuestionTemplates();
+    if (generation !== detailRenderGeneration) return;
     const signature = JSON.stringify({
       jobId: result.jobId,
       title: job.title,
-      overallScore: result.overallScore,
-      action: result.recommendedAction,
+      score: scoreSignature(result),
       language: settings.language,
       theme: currentTheme(),
       placement,
@@ -723,23 +843,31 @@
       renderAiState(sidebar);
       return;
     }
-    lastSidebarSignature = signature;
     const decisionResponse = await sendMessage({
       type: "GET_DECISION",
       jobId: result.jobId,
       url: job.url
     });
+    if (generation !== detailRenderGeneration) return;
+    lastSidebarSignature = signature;
     const savedDecision =
       decisionResponse && decisionResponse.ok ? decisionResponse.decision : null;
+    const draftKey = aiJobKey(job, result);
+    const draft = detailDraftCache.get(draftKey) || null;
     const selectedAction =
-      (savedDecision && savedDecision.userDecision) || result.recommendedAction;
-    const savedNote = (savedDecision && savedDecision.note) || "";
+      (draft && draft.selectedAction) ||
+      (savedDecision && savedDecision.userDecision) ||
+      result.recommendedAction;
+    const savedNote = draft
+      ? draft.note
+      : (savedDecision && savedDecision.note) || "";
     const savedTags =
-      savedDecision && Array.isArray(savedDecision.tags)
+      draft
+        ? draft.tags
+        : savedDecision && Array.isArray(savedDecision.tags)
         ? savedDecision.tags.join(", ")
         : "";
-    const collapsed =
-      placement === "inline" ? false : sidebar.classList.contains("uwe-sidebar--collapsed");
+    const collapsed = sidebarCollapsed;
 
     sidebar.innerHTML = sidebarTemplate(
       job,
@@ -750,14 +878,17 @@
       questionTemplates
     );
     sidebar.classList.toggle("uwe-sidebar--collapsed", collapsed);
+    syncSidebarToggle(sidebar);
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
     sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
+    sidebar.setAttribute("data-uwe-draft-job-key", draftKey);
     placeSidebar(sidebar, placement, anchor);
     ensureInlineSidebarAnchored(sidebar, placement);
     applyTheme(sidebar);
     positionSidebar(sidebar);
     bindSidebarEvents(sidebar, job, result);
+    restoreSidebarDraft(sidebar, draft);
     renderAiState(sidebar);
   }
 
@@ -774,25 +905,40 @@
     const reasonsAgainst = result.negativeReasons.map(localize);
     const riskNotes = result.riskNotes.map(localize);
     const missingSignals = result.missingSignals.map(localize);
+    const actionReason = result.actionGateReason
+      ? [localize(result.actionGateReason)]
+      : [];
     return `
       <div class="uwe-sidebar__header">
         <h2 class="uwe-sidebar__title">${escapeHtml(t("sidebar.title"))}</h2>
-        <button class="uwe-sidebar__toggle" type="button" data-uwe-toggle>${escapeHtml(
+        <div class="uwe-sidebar__compact" aria-label="${escapeHtml(
+          `${t("badge.overall")} ${result.overallScore}, ${t(
+            "sidebar.recommendedActionSummary",
+            { action: actionLabel }
+          )}`
+        )}">
+          <strong>${result.overallScore}</strong>
+          <span>${escapeHtml(actionLabel)}</span>
+        </div>
+        <button class="uwe-sidebar__toggle" type="button" data-uwe-toggle aria-expanded="true" aria-controls="uwe-sidebar-body">${escapeHtml(
           t("sidebar.collapse")
         )}</button>
       </div>
-      <div class="uwe-sidebar__body">
+      <div class="uwe-sidebar__body" id="uwe-sidebar-body">
         <section class="uwe-summary" aria-label="${escapeHtml(t("sidebar.summary"))}">
           <div class="uwe-score-ring uwe-score-help" tabindex="0" role="button">${result.overallScore}${scoreTip(
             scoreHelp("overall", result)
           )}</div>
           <div class="uwe-summary__meta">
-            <div class="uwe-action uwe-action--${result.recommendedAction} uwe-score-help" tabindex="0" role="button">${escapeHtml(
+            <div class="uwe-action uwe-action--${result.recommendedAction} uwe-score-help" tabindex="0" role="button" aria-label="${escapeHtml(
+              t("sidebar.recommendedActionLabel", { action: actionLabel })
+            )}">${escapeHtml(
               actionLabel
             )}${scoreTip(scoreHelp("action", result))}</div>
             <p class="uwe-job-title">${escapeHtml(job.title)}</p>
           </div>
         </section>
+        ${listSection(t("sidebar.actionReason"), actionReason)}
         <section class="uwe-breakdown">
           ${scoreRow(t("badge.match"), result.matchScore, scoreHelp("match", result))}
           ${scoreRow(t("badge.client"), result.clientQualityScore, scoreHelp("client", result))}
@@ -816,10 +962,14 @@
             ${decisionButton("maybe", selectedAction)}
             ${decisionButton("pass", selectedAction)}
           </div>
-          <textarea class="uwe-note" data-uwe-note placeholder="${escapeHtml(
+          <textarea class="uwe-note" data-uwe-note aria-label="${escapeHtml(
+            t("sidebar.notes")
+          )}" placeholder="${escapeHtml(
             t("sidebar.notes")
           )}">${escapeHtml(savedNote)}</textarea>
-          <input class="uwe-tags" data-uwe-tags placeholder="${escapeHtml(
+          <input class="uwe-tags" data-uwe-tags aria-label="${escapeHtml(
+            t("sidebar.tags")
+          )}" placeholder="${escapeHtml(
             t("sidebar.tags")
           )}" value="${escapeHtml(savedTags)}" />
           <div class="uwe-actions">
@@ -832,7 +982,7 @@
                 : t("sidebar.aiUnavailable")
             )}</button>
           </div>
-          <div class="uwe-status" data-uwe-status></div>
+          <div class="uwe-status" data-uwe-status role="status" aria-live="polite"></div>
           <div class="uwe-ai-result" data-uwe-ai-result hidden></div>
         </section>
       </div>
@@ -868,10 +1018,12 @@
               <input
                 type="text"
                 data-uwe-new-template-question
+                aria-label="${escapeHtml(t("sidebar.templateQuestionPlaceholder"))}"
                 placeholder="${escapeHtml(t("sidebar.templateQuestionPlaceholder"))}"
               />
               <textarea
                 data-uwe-new-template-answer
+                aria-label="${escapeHtml(t("sidebar.templateAnswerPlaceholder"))}"
                 placeholder="${escapeHtml(t("sidebar.templateAnswerPlaceholder"))}"
               ></textarea>
               <button type="button" data-uwe-template-create>${escapeHtml(
@@ -910,6 +1062,7 @@
         <div class="uwe-question-card__match">${escapeHtml(matchText)}</div>
         <textarea
           data-uwe-question-answer
+          aria-label="${escapeHtml(`${question}: ${t("sidebar.questionAnswerPlaceholder")}`)}"
           placeholder="${escapeHtml(t("sidebar.questionAnswerPlaceholder"))}"
         >${escapeHtml(answer)}</textarea>
         <div class="uwe-question-actions">
@@ -937,9 +1090,12 @@
         <input
           type="text"
           data-uwe-template-question
+          aria-label="${escapeHtml(t("sidebar.templateQuestionPlaceholder"))}"
           value="${escapeHtml(template.question)}"
         />
-        <textarea data-uwe-template-answer>${escapeHtml(template.answer)}</textarea>
+        <textarea data-uwe-template-answer aria-label="${escapeHtml(
+          t("sidebar.templateAnswerPlaceholder")
+        )}">${escapeHtml(template.answer)}</textarea>
         <div class="uwe-template-item__actions">
           <span>${escapeHtml(templateUpdatedLabel(template))}</span>
           <button type="button" data-uwe-template-update>${escapeHtml(
@@ -990,7 +1146,9 @@
     return `
       <button type="button" data-uwe-decision="${action}" aria-pressed="${
         action === selectedAction ? "true" : "false"
-      }">${escapeHtml(t(`action.${action}`))}</button>
+      }" aria-label="${escapeHtml(
+        t("sidebar.selectAction", { action: t(`action.${action}`) })
+      )}">${escapeHtml(t(`action.${action}`))}</button>
     `;
   }
 
@@ -1001,10 +1159,8 @@
 
     sidebar.querySelector("[data-uwe-toggle]").addEventListener("click", () => {
       sidebar.classList.toggle("uwe-sidebar--collapsed");
-      const button = sidebar.querySelector("[data-uwe-toggle]");
-      button.textContent = sidebar.classList.contains("uwe-sidebar--collapsed")
-        ? t("sidebar.expand")
-        : t("sidebar.collapse");
+      sidebarCollapsed = sidebar.classList.contains("uwe-sidebar--collapsed");
+      syncSidebarToggle(sidebar);
       positionSidebar(sidebar);
     });
 
@@ -1017,7 +1173,8 @@
       });
     });
 
-    sidebar.querySelector("[data-uwe-save]").addEventListener("click", async () => {
+    sidebar.querySelector("[data-uwe-save]").addEventListener("click", async (event) => {
+      if (!event.isTrusted) return;
       const selected = sidebar.querySelector('[data-uwe-decision][aria-pressed="true"]');
       const userDecision = selected ? selected.getAttribute("data-uwe-decision") : "";
       const response = await sendMessage({
@@ -1040,7 +1197,8 @@
     });
 
     const aiButton = sidebar.querySelector("[data-uwe-ai]");
-    aiButton.addEventListener("click", async () => {
+    aiButton.addEventListener("click", async (event) => {
+      if (!event.isTrusted) return;
       if (aiButton.disabled) return;
       const state = startAiAnalysis(job, result);
       renderAiState(sidebar);
@@ -1074,7 +1232,33 @@
     const response = await sendMessage({ type: "GET_QUESTION_TEMPLATES" });
     return response && response.ok && Array.isArray(response.templates)
       ? response.templates
-      : [];
+      : null;
+  }
+
+  async function ensureQuestionTemplates() {
+    if (questionTemplatesLoaded) return questionTemplates;
+    if (!questionTemplatesPromise) {
+      questionTemplatesPromise = loadQuestionTemplates()
+        .then((templates) => {
+          if (Array.isArray(templates)) {
+            questionTemplates = templates;
+            questionTemplatesLoaded = true;
+          }
+          return questionTemplates;
+        })
+        .finally(() => {
+          questionTemplatesPromise = null;
+        });
+    }
+    return questionTemplatesPromise;
+  }
+
+  function syncSidebarToggle(sidebar) {
+    const button = sidebar && sidebar.querySelector("[data-uwe-toggle]");
+    if (!button) return;
+    const collapsed = sidebar.classList.contains("uwe-sidebar--collapsed");
+    button.textContent = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
 
   function bindQuestionTemplateEvents(sidebar, job) {
@@ -1090,7 +1274,8 @@
     });
 
     panel.querySelectorAll("[data-uwe-ai-answer]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         if (button.disabled) return;
         const card = button.closest(".uwe-question-card");
         const index = Number(card && card.getAttribute("data-uwe-question-index"));
@@ -1130,7 +1315,8 @@
     });
 
     panel.querySelectorAll("[data-uwe-copy-answer]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         const card = button.closest(".uwe-question-card");
         const answer = card && card.querySelector("[data-uwe-question-answer]");
         const value = answer ? answer.value.trim() : "";
@@ -1148,7 +1334,8 @@
     });
 
     panel.querySelectorAll("[data-uwe-save-question-template]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         const card = button.closest(".uwe-question-card");
         const index = Number(card && card.getAttribute("data-uwe-question-index"));
         const answer = card && card.querySelector("[data-uwe-question-answer]");
@@ -1171,7 +1358,8 @@
 
     const createButton = panel.querySelector("[data-uwe-template-create]");
     if (createButton) {
-      createButton.addEventListener("click", async () => {
+      createButton.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         const question = panel
           .querySelector("[data-uwe-new-template-question]")
           ?.value.trim();
@@ -1190,7 +1378,8 @@
     }
 
     panel.querySelectorAll("[data-uwe-template-update]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         const item = button.closest(".uwe-template-item");
         const question = item
           ?.querySelector("[data-uwe-template-question]")
@@ -1214,7 +1403,8 @@
     });
 
     panel.querySelectorAll("[data-uwe-template-delete]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        if (!event.isTrusted) return;
         const item = button.closest(".uwe-template-item");
         const id = item && item.getAttribute("data-uwe-template-id");
         if (!id) return;
@@ -1652,13 +1842,39 @@
 
   function scheduleRender() {
     window.clearTimeout(renderTimer);
-    renderTimer = window.setTimeout(async () => {
+    renderTimer = window.setTimeout(() => {
       if (currentUrl !== window.location.href) {
         currentUrl = window.location.href;
       }
-      await renderDetailSidebar();
-      renderListBadges();
+      renderDetailSidebar().catch(() => null);
+      scheduleListRender();
     }, 180);
+  }
+
+  function scheduleListRender() {
+    if (listRenderHandle !== null) return;
+    const run = () => {
+      listRenderHandle = null;
+      listRenderUsesIdleCallback = false;
+      renderListBadges();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      listRenderUsesIdleCallback = true;
+      listRenderHandle = window.requestIdleCallback(run, { timeout: 500 });
+      return;
+    }
+    listRenderHandle = window.setTimeout(run, 0);
+  }
+
+  function cancelListRender() {
+    if (listRenderHandle === null) return;
+    if (listRenderUsesIdleCallback && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(listRenderHandle);
+    } else {
+      window.clearTimeout(listRenderHandle);
+    }
+    listRenderHandle = null;
+    listRenderUsesIdleCallback = false;
   }
 
   function isExtensionElement(node) {
@@ -1715,6 +1931,9 @@
     window.addEventListener("popstate", scheduleRender);
     window.addEventListener("hashchange", scheduleRender);
     window.addEventListener("resize", scheduleRender);
+    if (window.navigation && window.navigation.addEventListener) {
+      window.navigation.addEventListener("navigate", scheduleRender);
+    }
     window.addEventListener(
       "scroll",
       () => {
@@ -1722,12 +1941,6 @@
       },
       { passive: true }
     );
-    window.setInterval(() => {
-      if (currentUrl !== window.location.href) {
-        currentUrl = window.location.href;
-        scheduleRender();
-      }
-    }, 1000);
   }
 
   if (document.readyState === "loading") {

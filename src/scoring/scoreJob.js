@@ -17,7 +17,19 @@
 
   function includesPhrase(haystack, phrase) {
     const normalizedPhrase = normalizeText(phrase);
-    return Boolean(normalizedPhrase && haystack.includes(normalizedPhrase));
+    if (!normalizedPhrase) return false;
+    const escaped = normalizedPhrase
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s+");
+    const leadingBoundary = /^[a-z0-9]/.test(normalizedPhrase)
+      ? "(?:^|[^a-z0-9])"
+      : "";
+    const trailingBoundary = /[a-z0-9]$/.test(normalizedPhrase)
+      ? "(?=$|[^a-z0-9])"
+      : "(?=$|[^a-z0-9+#.])";
+    return new RegExp(`${leadingBoundary}${escaped}${trailingBoundary}`, "i").test(
+      haystack
+    );
   }
 
   function unique(values) {
@@ -58,7 +70,7 @@
       "payment"
     ];
     return signals.reduce(
-      (count, signal) => count + (text.includes(signal) ? 1 : 0),
+      (count, signal) => count + (includesPhrase(text, signal) ? 1 : 0),
       0
     );
   }
@@ -337,22 +349,39 @@
     );
 
     let recommendedAction = "maybe";
-    if (
-      riskLevel === "high" ||
-      blacklistedMatches.length ||
-      overallScore < settings.thresholds.pass
-    ) {
+    let actionGateReason = reason("actionGate.manualReview");
+    if (riskLevel === "high") {
       recommendedAction = "pass";
+      actionGateReason = reason("actionGate.highRisk");
+    } else if (blacklistedMatches.length) {
+      recommendedAction = "pass";
+      actionGateReason = reason("actionGate.blacklisted");
+    } else if (overallScore < settings.thresholds.pass) {
+      recommendedAction = "pass";
+      actionGateReason = reason("actionGate.belowPass", {
+        score: overallScore,
+        threshold: settings.thresholds.pass
+      });
     } else if (
       overallScore >= settings.thresholds.apply &&
       riskLevel === "low" &&
       !missingSignals.length
     ) {
       recommendedAction = "apply";
+      actionGateReason = reason("actionGate.applyReady");
     } else if (overallScore >= settings.thresholds.watch && missingSignals.length) {
       recommendedAction = "watch";
+      actionGateReason = reason("actionGate.missingSignals", {
+        count: missingSignals.length
+      });
     } else if (overallScore >= settings.thresholds.watch) {
       recommendedAction = "maybe";
+      actionGateReason = reason("actionGate.manualReview");
+    } else {
+      actionGateReason = reason("actionGate.belowWatch", {
+        score: overallScore,
+        threshold: settings.thresholds.watch
+      });
     }
 
     return {
@@ -364,6 +393,7 @@
       riskScore,
       riskLevel,
       recommendedAction,
+      actionGateReason,
       positiveReasons: uniqueReasons(positiveReasons).slice(0, 6),
       negativeReasons: uniqueReasons(negativeReasons).slice(0, 6),
       riskNotes: uniqueReasons(riskNotes).slice(0, 6),

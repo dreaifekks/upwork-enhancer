@@ -171,6 +171,27 @@
     };
   }
 
+  function normalizeThresholds(thresholds) {
+    const defaults = DEFAULT_SETTINGS.thresholds;
+    const next = {
+      apply: Math.max(
+        0,
+        Math.min(100, numberOrDefault(thresholds && thresholds.apply, defaults.apply))
+      ),
+      watch: Math.max(
+        0,
+        Math.min(100, numberOrDefault(thresholds && thresholds.watch, defaults.watch))
+      ),
+      pass: Math.max(
+        0,
+        Math.min(100, numberOrDefault(thresholds && thresholds.pass, defaults.pass))
+      )
+    };
+    return next.apply >= next.watch && next.watch >= next.pass
+      ? next
+      : clone(defaults);
+  }
+
   function normalizeSettings(input) {
     const defaults = clone(DEFAULT_SETTINGS);
     const source = input && typeof input === "object" ? input : {};
@@ -214,20 +235,7 @@
           : defaults.offPlatformPhrases
       ),
       weights: normalizeWeights(source.weights || defaults.weights),
-      thresholds: {
-        apply: numberOrDefault(
-          source.thresholds && source.thresholds.apply,
-          defaults.thresholds.apply
-        ),
-        watch: numberOrDefault(
-          source.thresholds && source.thresholds.watch,
-          defaults.thresholds.watch
-        ),
-        pass: numberOrDefault(
-          source.thresholds && source.thresholds.pass,
-          defaults.thresholds.pass
-        )
-      },
+      thresholds: normalizeThresholds(source.thresholds),
       api: {
         ...defaults.api,
         ...api,

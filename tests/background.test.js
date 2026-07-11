@@ -84,7 +84,7 @@ test("question answer templates are saved, deduped, and deleted locally", async 
   assert.deepEqual(Array.from(worker.store.uwe_question_templates_v1), []);
 });
 
-test("IMPORT_PROFILE_FROM_ACTIVE_TAB replaces default preferences from profile and portfolio", async () => {
+test("IMPORT_PROFILE_FROM_ACTIVE_TAB merges profile signals with manual preferences", async () => {
   const worker = createServiceWorker({
     initialStore: {
       uwe_settings_v1: {
@@ -123,18 +123,22 @@ test("IMPORT_PROFILE_FROM_ACTIVE_TAB replaces default preferences from profile a
   const response = await worker.send({ type: "IMPORT_PROFILE_FROM_ACTIVE_TAB" });
 
   assert.equal(response.ok, true);
-  assert.deepEqual(
-    Array.from(worker.store.uwe_settings_v1.preferredSkills.slice(0, 6)),
-    ["Python", "Next.js", "React", "FastAPI", "OpenAI API", "LLM"]
-  );
+  assert.deepEqual(Array.from(worker.store.uwe_settings_v1.preferredSkills.slice(0, 6)), [
+    "chrome extension",
+    "browser extension",
+    "Python",
+    "Next.js",
+    "React",
+    "FastAPI"
+  ]);
   assert.ok(worker.store.uwe_settings_v1.preferredSkills.includes("RAG"));
   assert.equal(
     worker.store.uwe_settings_v1.preferredSkills.includes("chrome extension"),
-    false
+    true
   );
   assert.deepEqual(
-    Array.from(worker.store.uwe_settings_v1.preferredProjectTypes.slice(0, 4)),
-    ["ai integration", "chatbot", "web app", "api integration"]
+    Array.from(worker.store.uwe_settings_v1.preferredProjectTypes.slice(0, 5)),
+    ["browser extension", "ai integration", "chatbot", "web app", "api integration"]
   );
   assert.equal(response.settings.api.configured, true);
   assert.equal(response.settings.api.apiKey, "");
@@ -224,10 +228,38 @@ test("IMPORT_PROFILE_FROM_ACTIVE_TAB prefers an open freelancer profile tab", as
     queried[0].url.includes("https://www.upwork.com/freelancers/settings/profile*")
   );
   assert.deepEqual(Array.from(worker.store.uwe_settings_v1.preferredSkills), [
+    "Manual Skill",
     "React",
     "Node.js",
     "Automation"
   ]);
+});
+
+test("content senders cannot invoke settings mutation messages", async () => {
+  const worker = createServiceWorker();
+  const response = await worker.send(
+    { type: "SAVE_SETTINGS", settings: {} },
+    { tab: { id: 7, url: "https://www.upwork.com/nx/find-work/" } }
+  );
+
+  assert.equal(response.ok, false);
+  assert.match(response.error, /not available to page content/i);
+});
+
+test("messages from a different extension id are rejected", async () => {
+  const worker = createServiceWorker();
+  const response = await worker.send(
+    { type: "GET_PUBLIC_SETTINGS" },
+    { id: "another-extension" }
+  );
+
+  assert.equal(response.ok, false);
+  assert.match(response.error, /unauthorized extension sender/i);
+});
+
+test("service worker restricts local storage to trusted extension contexts", () => {
+  const worker = createServiceWorker();
+  assert.deepEqual(worker.storageAccessLevels, ["TRUSTED_CONTEXTS"]);
 });
 
 test("TEST_AI_CONFIG sends the stored API key only from the service worker", async () => {
@@ -453,7 +485,11 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
         positiveReasons: ["Matches preferred skills"]
       }
     },
-    { tab: { id: 42 }, frameId: 7 }
+    {
+      tab: { id: 42, url: "https://www.upwork.com/jobs/~01" },
+      url: "https://www.upwork.com/jobs/~01",
+      frameId: 7
+    }
   );
 
   assert.equal(response.ok, true);
@@ -493,6 +529,71 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
   );
 });
 
+test("AI_ANALYZE_STREAM does not append a retry after partial output", async () => {
+  let fetchCount = 0;
+  const streamMessages = [];
+  const encoder = new TextEncoder();
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1/",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async () => {
+      fetchCount += 1;
+      let reads = 0;
+      return {
+        ok: true,
+        body: {
+          getReader() {
+            return {
+              async read() {
+                reads += 1;
+                if (reads === 1) {
+                  return {
+                    done: false,
+                    value: encoder.encode(
+                      'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n'
+                    )
+                  };
+                }
+                throw new Error("stream disconnected");
+              }
+            };
+          }
+        }
+      };
+    },
+    tabSendMessageImpl: async (_tabId, message) => {
+      streamMessages.push(message);
+      return null;
+    }
+  });
+
+  const response = await worker.send(
+    {
+      type: "AI_ANALYZE_STREAM",
+      requestId: "request-partial",
+      job: { title: "Test" },
+      score: { overallScore: 80 }
+    },
+    {
+      tab: { id: 42, url: "https://www.upwork.com/jobs/~01" },
+      url: "https://www.upwork.com/jobs/~01"
+    }
+  );
+
+  assert.equal(response.ok, false);
+  assert.equal(fetchCount, 1);
+  assert.equal(streamMessages[0].delta, "Partial");
+  assert.match(streamMessages.at(-1).error, /after partial output/i);
+});
+
 function streamResponse(chunks) {
   const encoder = new TextEncoder();
   return {
@@ -525,6 +626,7 @@ function createServiceWorker({
   tabSendMessageImpl
 } = {}) {
   const store = { ...initialStore };
+  const storageAccessLevels = [];
   const backgroundDir = resolve("src/background");
   let messageListener = null;
 
@@ -543,6 +645,7 @@ function createServiceWorker({
         }
       },
       runtime: {
+        id: "upwork-enhancer-test",
         onMessage: {
           addListener(listener) {
             messageListener = listener;
@@ -552,6 +655,10 @@ function createServiceWorker({
       },
       storage: {
         local: {
+          setAccessLevel({ accessLevel }) {
+            storageAccessLevels.push(accessLevel);
+            return Promise.resolve();
+          },
           async get(key) {
             return { [key]: store[key] };
           },
@@ -597,6 +704,7 @@ function createServiceWorker({
 
   return {
     store,
+    storageAccessLevels,
     send(message, sender = {}) {
       return new Promise((resolveResponse) => {
         messageListener(message, sender, resolveResponse);

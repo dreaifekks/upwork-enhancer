@@ -296,6 +296,24 @@
   line-height: 1.25;
 }
 
+.uwe-sidebar__compact {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  color: var(--uwe-muted);
+  font-size: 12px;
+}
+
+.uwe-sidebar__compact strong {
+  color: var(--uwe-ring-text);
+  font-size: 15px;
+}
+
+.uwe-sidebar:not(.uwe-sidebar--collapsed) .uwe-sidebar__compact {
+  display: none;
+}
+
 .uwe-sidebar__toggle,
 .uwe-sidebar button {
   min-height: 30px;

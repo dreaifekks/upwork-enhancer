@@ -36,6 +36,7 @@ test("options page supports profile URL workflow and AI testing", () => {
   assert.match(options, /id="testAi"/);
   assert.match(options, /name="apiKey"/);
   assert.match(options, /name="offPlatformPhrases"/);
+  assert.match(readFileSync("src/options/options.js", "utf8"), /validateThresholdOrder/);
   assert.match(options, /data-tag-editor="preferredSkills"/);
   assert.match(options, /data-tag-editor="preferredProjectTypes"/);
   assert.doesNotMatch(options, /<textarea name="preferredSkills"/);
@@ -137,8 +138,12 @@ test("detail scores are available to matching list cards", () => {
   assert.match(contentScript, /cacheDetailScore\(job, result\)/);
   assert.match(
     contentScript,
-    /await renderDetailSidebar\(\);\s*renderListBadges\(\);/
+    /renderDetailSidebar\(\)\.catch\(\(\) => null\);\s*scheduleListRender\(\);/
   );
+  assert.match(contentScript, /requestIdleCallback/);
+  assert.doesNotMatch(contentScript, /setInterval\(/);
+  assert.match(contentScript, /detailDraftCache/);
+  assert.match(contentScript, /captureSidebarDraft/);
 });
 
 test("detail review reuses stable markup between data refreshes", () => {

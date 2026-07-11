@@ -56,7 +56,7 @@ test("renders score context labels for job cards and client history", (t) => {
     assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
     assert.match(
       result.stdout,
-      /data-uwe-content-script-version="0\.1\.18"/
+      /data-uwe-content-script-version="0\.1\.19"/
     );
     assert.match(result.stdout, /class="uwe-sidebar[^"]*"/);
     assert.match(
@@ -178,6 +178,12 @@ test("renders Upwork slider detail review with h4 title and long summary", (t) =
       result.stdout,
       /Senior Full-Stack Engineer Needed to Stabilize or Rebuild Internal Data Automation Platform/
     );
+    assert.match(result.stdout, /Client payment is verified/);
+    assert.match(result.stdout, /Public proposal range is already high: 20 to 50/);
+    assert.doesNotMatch(result.stdout, /Payment verification is missing or unclear/);
+    assert.doesNotMatch(result.stdout, /Competition signals are incomplete/);
+    assert.match(result.stdout, /class="uwe-sidebar__compact"/);
+    assert.match(result.stdout, /aria-expanded="false"/);
     assert.doesNotMatch(result.stdout, /History: Open job in a new window/);
     const reviewIndex = result.stdout.indexOf('class="uwe-sidebar');
     const summaryIndex = result.stdout.indexOf("Summary Job Description");

@@ -36,6 +36,91 @@ test("scores a strong matching job as apply", () => {
   assert.equal(result.recommendedAction, "apply");
   assert.ok(result.overallScore >= 78);
   assert.equal(result.riskLevel, "low");
+  assert.equal(result.actionGateReason.key, "actionGate.applyReady");
+});
+
+test("matches preferred skills by token boundaries instead of substrings", () => {
+  const settings = UWE.normalizeSettings({
+    preferredSkills: ["Java", "AI", "Node.js", "C++"],
+    preferredProjectTypes: [],
+    avoidedSkills: [],
+    blacklistedPhrases: [],
+    offPlatformPhrases: []
+  });
+  const falsePositive = scoreJob(
+    {
+      title: "JavaScript maintainer for detailed email workflows",
+      description: "Maintain a capital reporting dashboard.",
+      skills: ["JavaScript"],
+      hourlyMax: 60,
+      proposalCount: 5,
+      clientPaymentVerified: true,
+      clientSpend: 10000
+    },
+    settings
+  );
+  const positive = scoreJob(
+    {
+      title: "AI service with Java, Node.js and C++",
+      skills: ["AI", "Java", "Node.js", "C++"],
+      hourlyMax: 60,
+      proposalCount: 5,
+      clientPaymentVerified: true,
+      clientSpend: 10000
+    },
+    settings
+  );
+
+  assert.equal(
+    falsePositive.positiveReasons.some(
+      (item) => item.key === "reason.preferredSkillMatch"
+    ),
+    false
+  );
+  assert.deepEqual(
+    positive.positiveReasons.find(
+      (item) => item.key === "reason.preferredSkillMatch"
+    ).params.skills,
+    ["Java", "AI", "Node.js", "C++"]
+  );
+});
+
+test("parses current payment verification wording", () => {
+  assert.equal(UWE.parsePaymentVerification("Payment method verified"), true);
+  assert.equal(UWE.parsePaymentVerification("Payment verified"), true);
+  assert.equal(UWE.parsePaymentVerification("Payment method not verified"), false);
+  assert.equal(UWE.parsePaymentVerification("Payment unverified"), false);
+  assert.equal(UWE.parsePaymentVerification("About the client"), null);
+});
+
+test("merges missing detail signals without overwriting richer detail values", () => {
+  const merged = UWE.mergeJobSignals(
+    {
+      jobId: "~01",
+      title: "Detail title",
+      description: "Full detail description",
+      proposalCount: null,
+      proposalCountBucket: "",
+      clientPaymentVerified: true,
+      skills: ["React"]
+    },
+    {
+      title: "List title",
+      description: "Short list text",
+      proposalCount: 50,
+      proposalCountLabel: "20 to 50",
+      proposalCountBucket: "high",
+      clientPaymentVerified: false,
+      skills: ["JavaScript"]
+    }
+  );
+
+  assert.equal(merged.title, "Detail title");
+  assert.equal(merged.description, "Full detail description");
+  assert.equal(merged.proposalCount, 50);
+  assert.equal(merged.proposalCountBucket, "high");
+  assert.equal(merged.clientPaymentVerified, true);
+  assert.deepEqual(merged.skills, ["React"]);
 });
 
 test("flags unpaid off-platform low-budget work as pass", () => {
@@ -55,7 +140,36 @@ test("flags unpaid off-platform low-budget work as pass", () => {
 
   assert.equal(result.recommendedAction, "pass");
   assert.equal(result.riskLevel, "high");
+  assert.equal(result.actionGateReason.key, "actionGate.highRisk");
   assert.ok(result.riskNotes.length >= 2);
+});
+
+test("explains when missing signals gate an otherwise strong score", () => {
+  const settings = UWE.normalizeSettings({
+    ...UWE.DEFAULT_SETTINGS,
+    preferredSkills: ["React", "TypeScript", "automation"],
+    preferredProjectTypes: ["web app"],
+    thresholds: { apply: 70, watch: 60, pass: 40 }
+  });
+  const result = scoreJob(
+    {
+      title: "React TypeScript automation web app",
+      description: "Build a polished automation web app.",
+      skills: ["React", "TypeScript", "Automation"],
+      hourlyMax: 80,
+      proposalCount: 5,
+      postedAgeHours: 2,
+      clientPaymentVerified: true,
+      clientRating: 4.9,
+      clientHireRate: 80
+    },
+    settings
+  );
+
+  assert.ok(result.overallScore >= settings.thresholds.apply);
+  assert.equal(result.recommendedAction, "watch");
+  assert.equal(result.actionGateReason.key, "actionGate.missingSignals");
+  assert.ok(result.actionGateReason.params.count > 0);
 });
 
 test("does not treat Telegram or WhatsApp as off-platform risk by default", () => {
@@ -330,6 +444,19 @@ test("normalizes theme setting with auto default", () => {
   assert.equal(UWE.normalizeSettings({ theme: "dark" }).theme, "dark");
   assert.equal(UWE.normalizeSettings({ theme: "light" }).theme, "light");
   assert.equal(UWE.normalizeSettings({ theme: "solarized" }).theme, "auto");
+});
+
+test("clamps valid thresholds and rejects contradictory ordering", () => {
+  assert.deepEqual(UWE.normalizeSettings({ thresholds: {
+    apply: 120,
+    watch: 70,
+    pass: -5
+  } }).thresholds, { apply: 100, watch: 70, pass: 0 });
+  assert.deepEqual(UWE.normalizeSettings({ thresholds: {
+    apply: 60,
+    watch: 80,
+    pass: 40
+  } }).thresholds, UWE.DEFAULT_SETTINGS.thresholds);
 });
 
 test("normalizes imported profile snapshots and builds profile summary", () => {

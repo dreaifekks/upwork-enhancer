@@ -25,6 +25,10 @@
       "sidebar.reasonsAgainst": "Reasons to Pause",
       "sidebar.risks": "Risk Notes",
       "sidebar.missing": "Missing Signals",
+      "sidebar.actionReason": "Why this action",
+      "sidebar.recommendedActionLabel": "Recommended action: {action}. Show explanation",
+      "sidebar.recommendedActionSummary": "Recommended action: {action}",
+      "sidebar.selectAction": "Select {action}",
       "sidebar.notes": "Private note",
       "sidebar.tags": "Tags",
       "sidebar.save": "Save decision",
@@ -95,6 +99,7 @@
       "options.thresholdApply": "Apply",
       "options.thresholdWatch": "Watch",
       "options.thresholdPass": "Pass",
+      "options.thresholdOrderError": "Thresholds must satisfy Apply ≥ Watch ≥ Pass.",
       "options.ai": "AI assistance",
       "options.aiEnabled": "Enable AI actions",
       "options.apiBaseUrl": "API base URL",
@@ -170,7 +175,14 @@
       "reason.vagueScope": "Scope looks vague or overloaded.",
       "reason.unrealisticBudget": "Budget looks low for the requested scope.",
       "reason.missingClientInfo": "Client quality signals are incomplete.",
-      "reason.missingCompetition": "Competition signals are incomplete."
+      "reason.missingCompetition": "Competition signals are incomplete.",
+      "actionGate.highRisk": "High risk overrides the numeric score.",
+      "actionGate.blacklisted": "A blacklisted phrase overrides the numeric score.",
+      "actionGate.belowPass": "Score {score} is below the pass threshold {threshold}.",
+      "actionGate.applyReady": "The score, risk, and required signals meet the apply rules.",
+      "actionGate.missingSignals": "{count} missing signal(s) require review before applying.",
+      "actionGate.manualReview": "The score merits review, but does not meet every apply rule.",
+      "actionGate.belowWatch": "Score {score} is below the watch threshold {threshold}."
     },
     zh: {
       "app.name": "Upwork 增强器",
@@ -195,6 +207,10 @@
       "sidebar.reasonsAgainst": "需要谨慎的理由",
       "sidebar.risks": "风险提示",
       "sidebar.missing": "缺失信号",
+      "sidebar.actionReason": "为什么推荐这个动作",
+      "sidebar.recommendedActionLabel": "推荐动作：{action}，查看说明",
+      "sidebar.recommendedActionSummary": "推荐动作：{action}",
+      "sidebar.selectAction": "选择{action}",
       "sidebar.notes": "私人备注",
       "sidebar.tags": "标签",
       "sidebar.save": "保存决策",
@@ -265,6 +281,7 @@
       "options.thresholdApply": "投递",
       "options.thresholdWatch": "关注",
       "options.thresholdPass": "跳过",
+      "options.thresholdOrderError": "阈值必须满足：投递 ≥ 关注 ≥ 跳过。",
       "options.ai": "AI 辅助",
       "options.aiEnabled": "启用 AI 操作",
       "options.apiBaseUrl": "API Base URL",
@@ -340,7 +357,14 @@
       "reason.vagueScope": "需求范围模糊或过载。",
       "reason.unrealisticBudget": "预算相对需求可能偏低。",
       "reason.missingClientInfo": "客户质量信号不完整。",
-      "reason.missingCompetition": "竞争信号不完整。"
+      "reason.missingCompetition": "竞争信号不完整。",
+      "actionGate.highRisk": "高风险会覆盖数字总分，直接建议跳过。",
+      "actionGate.blacklisted": "命中黑名单短语会覆盖数字总分。",
+      "actionGate.belowPass": "总分 {score} 低于跳过阈值 {threshold}。",
+      "actionGate.applyReady": "总分、风险和必要信号均满足投递规则。",
+      "actionGate.missingSignals": "仍有 {count} 个缺失信号，需要确认后再投递。",
+      "actionGate.manualReview": "分数值得继续评估，但尚未满足全部投递条件。",
+      "actionGate.belowWatch": "总分 {score} 低于关注阈值 {threshold}。"
     }
   };
 

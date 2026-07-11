@@ -627,11 +627,7 @@
     const hourly = parseHourly(text);
     const fixedBudget = parseFixedBudget(text);
     const proposalSignal = parseProposalSignal(text);
-    const clientPaymentVerified = /payment verified/i.test(text)
-      ? true
-      : /payment unverified|payment not verified/i.test(text)
-        ? false
-        : null;
+    const clientPaymentVerified = parsePaymentVerification(text);
 
     return {
       jobId:
@@ -666,6 +662,15 @@
       clientAverageHourlyRate: null,
       countryOrTimezone: ""
     };
+  }
+
+  function parsePaymentVerification(value) {
+    const text = cleanText(value);
+    if (/payment(?:\s+method)?\s+(?:unverified|not\s+verified)/i.test(text)) {
+      return false;
+    }
+    if (/payment(?:\s+method)?\s+verified/i.test(text)) return true;
+    return null;
   }
 
   function parseJobCard(card) {
@@ -1127,6 +1132,52 @@
     return hasDetailContext && hasTitle && hasDetailText;
   }
 
+  const LIST_DETAIL_SIGNAL_FIELDS = [
+    "skills",
+    "budgetType",
+    "hourlyMin",
+    "hourlyMax",
+    "fixedBudget",
+    "experienceLevel",
+    "postedAge",
+    "postedAgeHours",
+    "proposalCount",
+    "proposalCountLabel",
+    "proposalCountBucket",
+    "proposalCountIsOpenEnded",
+    "interviewCount",
+    "inviteCount",
+    "clientPaymentVerified",
+    "clientRating",
+    "clientReviewCount",
+    "clientSpend",
+    "clientHireRate",
+    "clientAverageHourlyRate",
+    "countryOrTimezone"
+  ];
+
+  function isMissingSignal(value) {
+    return (
+      value === null ||
+      value === undefined ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    );
+  }
+
+  function mergeJobSignals(primaryInput, fallbackInput) {
+    const primary = primaryInput && typeof primaryInput === "object" ? primaryInput : {};
+    const fallback =
+      fallbackInput && typeof fallbackInput === "object" ? fallbackInput : {};
+    const merged = { ...primary };
+    LIST_DETAIL_SIGNAL_FIELDS.forEach((field) => {
+      if (isMissingSignal(merged[field]) && !isMissingSignal(fallback[field])) {
+        merged[field] = fallback[field];
+      }
+    });
+    return merged;
+  }
+
   const api = {
     cleanText,
     extractJobIdFromUrl,
@@ -1136,6 +1187,8 @@
     parseJobDetail,
     parseProposalQuestions,
     parseProposalSignal,
+    parsePaymentVerification,
+    mergeJobSignals,
     findDetailRootNode,
     findJobCards,
     isDetailLikeUrl,
