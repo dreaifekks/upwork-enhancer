@@ -6,3 +6,9 @@ build/
 .env.*
 *.log
 tests/artifacts/
+
+# Local audit and implementation working files
+audit/
+findings.md
+progress.md
+task_plan.md
