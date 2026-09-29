@@ -123,6 +123,130 @@ test("merges missing detail signals without overwriting richer detail values", (
   assert.deepEqual(merged.skills, ["React"]);
 });
 
+test("reads a job's rate or budget from Upwork's own labels", () => {
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      "Hourly: $30-$35 - Expert - Est. Time: Less than 1 month, 30+ hrs/week"
+    ),
+    { budgetType: "hourly", hourlyMin: 30, hourlyMax: 35, fixedBudget: null }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal("Expert Experience Level $30.00 - $35.00 Hourly"),
+    { budgetType: "hourly", hourlyMin: 30, hourlyMax: 35, fixedBudget: null }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal("Fixed-price - Expert - Est. Budget: $2,500"),
+    { budgetType: "fixed", hourlyMin: null, hourlyMax: null, fixedBudget: 2500 }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal("Build AI features. $2,500.00 Fixed-price Expert"),
+    { budgetType: "fixed", hourlyMin: null, hourlyMax: null, fixedBudget: 2500 }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal("Payment verified. $45-$75/hr. Proposals: Less than 5."),
+    { budgetType: "hourly", hourlyMin: 45, hourlyMax: 75, fixedBudget: null }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      "Hourly - Expert - Est. Time: 3 to 6 months, 30+ hrs/week. $20K+ spent"
+    ),
+    { budgetType: "", hourlyMin: null, hourlyMax: null, fixedBudget: null }
+  );
+});
+
+test("does not read a fixed budget into an hourly job", () => {
+  [
+    "Hourly: $40-$55 - Expert. We fixed the data model and want a fair price.",
+    "Budget is flexible for the right person: $40-$55/hr to start.",
+    "Budget: $40-$55/hr. $462K total spent.",
+    "Summary Our budget is tight. 30+ hrs/week Hourly $40.00 - $55.00 Hourly"
+  ].forEach((text) => {
+    assert.deepEqual(
+      UWE.parseBudgetSignal(text),
+      { budgetType: "hourly", hourlyMin: 40, hourlyMax: 55, fixedBudget: null },
+      text
+    );
+  });
+  // Upwork's label wins over a rate the description mentions in passing.
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      "Fixed-price - Expert - Est. Budget: $2,500 Our last developer charged $50/hr."
+    ),
+    { budgetType: "fixed", hourlyMin: null, hourlyMax: null, fixedBudget: 2500 }
+  );
+  assert.equal(
+    UWE.parseBudgetSignal("Est. Budget: $500Must have React").fixedBudget,
+    500
+  );
+});
+
+test("reads job terms without the client's average rate or other jobs", () => {
+  const client =
+    "About the client $30K total spent $17.44 /hr avg hourly rate paid 955 hours";
+  const history =
+    "Client\u2019s recent history (16) Logo design Fixed-price $50.00 " +
+    "Data entry 16 hrs @ $12.00/hr Billed: $192.00";
+
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      `${client} Summary Build it. $30.00 - $35.00 Hourly Proposals: 5 to 10 ${history}`
+    ),
+    { budgetType: "hourly", hourlyMin: 30, hourlyMax: 35, fixedBudget: null }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      `Summary Build it. $2,500.00 Fixed-price Proposals: 5 to 10 ${history} ${client}`
+    ),
+    { budgetType: "fixed", hourlyMin: null, hourlyMax: null, fixedBudget: 2500 }
+  );
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      `Summary Build it. 30+ hrs/week Hourly Proposals: 5 to 10 ${client} ${history}`
+    ),
+    { budgetType: "", hourlyMin: null, hourlyMax: null, fixedBudget: null }
+  );
+  // A history entry is its own job, so what it paid is its rate.
+  assert.deepEqual(
+    UWE.parseBudgetSignal(
+      "To freelancer: Great work. Billed: $621.23. 16 hrs @ $35.00/hr.",
+      { context: "history" }
+    ),
+    { budgetType: "hourly", hourlyMin: 35, hourlyMax: 35, fixedBudget: null }
+  );
+});
+
+test("judges budget risk by the hourly rate when a job states one", () => {
+  const job = {
+    title: "Senior full stack engineer",
+    description:
+      "Must be expert in frontend, backend, API, database and automation work.",
+    skills: ["React", "Node.js"],
+    proposalCount: 4,
+    clientPaymentVerified: true,
+    clientSpend: 25000
+  };
+  const hasBudgetRisk = (result) =>
+    result.riskNotes.some((note) => note.key === "reason.unrealisticBudget");
+
+  const fairRate = scoreJob(
+    { ...job, hourlyMin: 40, hourlyMax: 55, fixedBudget: 40 },
+    UWE.DEFAULT_SETTINGS
+  );
+  assert.equal(hasBudgetRisk(fairRate), false);
+  assert.equal(fairRate.riskLevel, "low");
+
+  const lowRate = scoreJob(
+    { ...job, hourlyMin: 10, hourlyMax: 15, fixedBudget: 10 },
+    UWE.DEFAULT_SETTINGS
+  );
+  assert.equal(hasBudgetRisk(lowRate), true);
+  assert.equal(lowRate.riskScore, 67);
+
+  const lowFixed = scoreJob({ ...job, fixedBudget: 50 }, UWE.DEFAULT_SETTINGS);
+  assert.equal(hasBudgetRisk(lowFixed), true);
+  assert.equal(lowFixed.riskScore, 67);
+});
+
 test("flags unpaid off-platform low-budget work as pass", () => {
   const result = scoreJob(
     {

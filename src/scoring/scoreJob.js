@@ -317,19 +317,14 @@
       riskPenalty += 14;
       riskNotes.push(reason("reason.vagueScope"));
     }
-    if (
-      budget.fixedBudget !== null &&
-      budget.fixedBudget < settings.minimumFixedBudget &&
-      countRequirements(text) >= 5
-    ) {
-      riskPenalty += 18;
-      riskNotes.push(reason("reason.unrealisticBudget"));
-    }
-    if (
-      budget.hourlyBest !== null &&
-      budget.hourlyBest < settings.minimumHourlyRate &&
-      countRequirements(text) >= 5
-    ) {
+    // Judge the budget the same way the match score does: by the hourly rate
+    // when there is one, otherwise by the fixed price. Never by both.
+    const belowBudgetFloor =
+      budget.hourlyBest !== null
+        ? budget.hourlyBest < settings.minimumHourlyRate
+        : budget.fixedBudget !== null &&
+          budget.fixedBudget < settings.minimumFixedBudget;
+    if (belowBudgetFloor && countRequirements(text) >= 5) {
       riskPenalty += 18;
       riskNotes.push(reason("reason.unrealisticBudget"));
     }

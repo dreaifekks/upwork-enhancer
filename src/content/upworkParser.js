@@ -126,41 +126,105 @@
     return amount;
   }
 
-  function parseHourly(text) {
-    const source = String(text || "").replace(/,/g, "");
-    const hourlyRange = source.match(
-      /\$\s*(\d+(?:\.\d+)?)\s*(?:-|to|–)\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:\/?\s*(?:hr|hour)|hourly)/i
-    );
-    if (hourlyRange) {
-      return {
-        budgetType: "hourly",
-        hourlyMin: Number(hourlyRange[1]),
-        hourlyMax: Number(hourlyRange[2])
-      };
+  const HOURLY_RATE_PATTERNS = [
+    // "Hourly: $30-$35" — job tiles put the label first and drop the unit.
+    /\b(?<unit>hourly)\s*:?\s*\$\s*(?<min>\d+(?:\.\d+)?)(?:\s*(?:-|to|–)\s*\$\s*(?<max>\d+(?:\.\d+)?))?/gi,
+    // "$30.00 - $35.00 Hourly", "$45-$75/hr"
+    /\$\s*(?<min>\d+(?:\.\d+)?)\s*(?:-|to|–)\s*\$?\s*(?<max>\d+(?:\.\d+)?)\s*(?<unit>\/?\s*(?:hr|hour)|hourly)/gi,
+    // "$35/hr"
+    /\$\s*(?<min>\d+(?:\.\d+)?)\s*(?<unit>\/?\s*(?:hr|hour)|hourly)/gi
+  ];
+  const FIXED_BUDGET_PATTERNS = [
+    // "Est. Budget: $2,500", "Fixed-price $50"
+    {
+      pattern:
+        /\b(?:budget\s*:|fixed[-\s]?price\s*:?)\s*(?<amount>\$\s*\d+(?:\.\d+)?(?:[km](?![a-z]))?)/gi,
+      amountLast: true
+    },
+    // "$2,500.00 Fixed-price"
+    {
+      pattern:
+        /(?<amount>\$\s*\d+(?:\.\d+)?(?:[km](?![a-z]))?)\s*fixed[-\s]?price\b/gi,
+      amountLast: false
     }
+  ];
+  const HOURLY_TAIL_PATTERN =
+    /^\s*(?:(?:-|to|–)\s*\$?\s*\d+(?:\.\d+)?\s*)?(?:\/\s*(?:hr|hour)|per\s+hour|hourly)/i;
+  const CLIENT_JOBS_PATTERN =
+    /\b(?:client\S{0,2}s recent history|other open jobs by this client)\b/i;
 
-    const hourlySingle = source.match(
-      /\$\s*(\d+(?:\.\d+)?)\s*(?:\/?\s*(?:hr|hour)|hourly)/i
-    );
-    if (hourlySingle) {
-      return {
-        budgetType: "hourly",
-        hourlyMin: Number(hourlySingle[1]),
-        hourlyMax: Number(hourlySingle[1])
-      };
-    }
-
-    return {};
+  // A job's own rate or budget comes before the client's other jobs on the
+  // page, whose amounts must not be read as this job's terms.
+  function ownTermsText(text, context) {
+    if (context !== "job") return text;
+    const index = text.search(CLIENT_JOBS_PATTERN);
+    return index > 0 ? text.slice(0, index) : text;
   }
 
-  function parseFixedBudget(text) {
-    const source = String(text || "");
-    if (!/fixed|budget|price/i.test(source)) return {};
-    const amount = parseMoneyText(source);
-    if (amount === null) return {};
+  function hourlyCandidates(source, context) {
+    const candidates = [];
+    HOURLY_RATE_PATTERNS.forEach((pattern, patternIndex) => {
+      for (const match of source.matchAll(pattern)) {
+        const before = source.slice(Math.max(0, match.index - 4), match.index);
+        const after = source.slice(match.index + match[0].length).slice(0, 12);
+        // "$17.44 /hr avg hourly rate paid" describes the client, not the job.
+        if (/^\s*avg\b/i.test(after)) continue;
+        // "16 hrs @ $35.00/hr" is what a past contract paid.
+        if (context !== "history" && /@\s*$/.test(before)) continue;
+        const min = Number(match.groups.min);
+        const max = Number(match.groups.max || match.groups.min);
+        if (!min || !max) continue;
+        // Upwork's own label outranks a rate mentioned in passing.
+        const labelled = match.groups.unit.toLowerCase() === "hourly";
+        candidates.push({
+          rank: labelled ? 0 : patternIndex,
+          index: match.index,
+          budgetType: "hourly",
+          hourlyMin: min,
+          hourlyMax: max,
+          fixedBudget: null
+        });
+      }
+    });
+    return candidates;
+  }
+
+  function fixedCandidates(source) {
+    const candidates = [];
+    FIXED_BUDGET_PATTERNS.forEach(({ pattern, amountLast }) => {
+      for (const match of source.matchAll(pattern)) {
+        const after = source.slice(match.index + match[0].length).slice(0, 24);
+        // "Budget: $40-$55/hr" states a rate, not a fixed price.
+        if (amountLast && HOURLY_TAIL_PATTERN.test(after)) continue;
+        const amount = parseMoneyText(match.groups.amount);
+        if (!amount) continue;
+        candidates.push({
+          rank: 0,
+          index: match.index,
+          budgetType: "fixed",
+          hourlyMin: null,
+          hourlyMax: null,
+          fixedBudget: amount
+        });
+      }
+    });
+    return candidates;
+  }
+
+  // Returns either an hourly rate or a fixed budget, never both: the first
+  // labelled statement of terms, or failing that the first rate in the text.
+  function parseBudgetSignal(text, options) {
+    const context = (options && options.context) || "job";
+    const source = ownTermsText(String(text || ""), context).replace(/,/g, "");
+    const [best] = [
+      ...hourlyCandidates(source, context),
+      ...fixedCandidates(source)
+    ].sort((a, b) => a.rank - b.rank || a.index - b.index);
     return {
-      budgetType: "fixed",
-      fixedBudget: amount
+      budgetType: best ? best.budgetType : "",
+      hourlyMin: best ? best.hourlyMin : null,
+      hourlyMax: best ? best.hourlyMax : null,
+      fixedBudget: best ? best.fixedBudget : null
     };
   }
 
@@ -620,12 +684,11 @@
     return jobLinksOf(rootNode)[0] || null;
   }
 
-  function commonFields(rootNode, fallbackUrl, textOverride) {
+  function commonFields(rootNode, fallbackUrl, textOverride, context) {
     const text = textOverride ? cleanText(textOverride) : textOf(rootNode);
     const link = jobLinkOf(rootNode);
     const url = absoluteUrl((link && link.getAttribute("href")) || fallbackUrl);
-    const hourly = parseHourly(text);
-    const fixedBudget = parseFixedBudget(text);
+    const budget = parseBudgetSignal(text, { context });
     const proposalSignal = parseProposalSignal(text);
     const clientPaymentVerified = parsePaymentVerification(text);
 
@@ -638,10 +701,10 @@
       description: text,
       skills: parseSkills(rootNode),
       proposalQuestions: parseProposalQuestions(rootNode, text),
-      budgetType: hourly.budgetType || fixedBudget.budgetType || "",
-      hourlyMin: hourly.hourlyMin || null,
-      hourlyMax: hourly.hourlyMax || null,
-      fixedBudget: fixedBudget.fixedBudget || null,
+      budgetType: budget.budgetType,
+      hourlyMin: budget.hourlyMin,
+      hourlyMax: budget.hourlyMax,
+      fixedBudget: budget.fixedBudget,
       experienceLevel: firstText(rootNode, [
         '[data-test*="experience"]',
         '[data-cy*="experience"]'
@@ -682,7 +745,7 @@
       textOf(jobLinkOf(card)) ||
       "Untitled job";
     return {
-      ...commonFields(card, override.url || "", override.text),
+      ...commonFields(card, override.url || "", override.text, context),
       title,
       source: "list",
       context
@@ -870,7 +933,7 @@
       firstDetailTitle(rootNode, currentUrl) ||
       documentTitle ||
       firstText(rootNode, ['[data-cy*="job-title"]']);
-    const fields = commonFields(rootNode, currentUrl);
+    const fields = commonFields(rootNode, currentUrl, "", "job");
     return {
       ...fields,
       jobId: extractJobIdFromUrl(currentUrl) || fields.jobId,
@@ -1187,6 +1250,7 @@
     parseJobDetail,
     parseProposalQuestions,
     parseProposalSignal,
+    parseBudgetSignal,
     parsePaymentVerification,
     mergeJobSignals,
     findDetailRootNode,
