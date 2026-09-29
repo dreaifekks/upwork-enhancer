@@ -56,7 +56,7 @@ test("renders score context labels for job cards and client history", (t) => {
     assert.match(result.stdout, /class="uwe-card-panel[^"]*"/);
     assert.match(
       result.stdout,
-      /data-uwe-content-script-version="0\.1\.20"/
+      /data-uwe-content-script-version="0\.1\.21"/
     );
     assert.match(result.stdout, /class="uwe-sidebar[^"]*"/);
     assert.match(
