@@ -124,13 +124,48 @@ test("job card strip leads with one verdict and flags only what needs attention"
     /tone === "weak" \|\| \(metric === "risk" && tone === "fair"\)/
   );
   assert.doesNotMatch(contentScript, /uwe-badge--overall/);
-  assert.match(css, /\.uwe-card-panel\s*\{[^}]*background:\s*var\(--uwe-tone-fill\)/);
+  assert.match(css, /\.uwe-card-panel\s*\{[^}]*background:\s*var\(--uwe-capsule-fill\)/);
   assert.match(css, /\.uwe-card-panel\s*\{[^}]*width:\s*fit-content/);
   assert.match(css, /\.uwe-badge--verdict\s*\{[^}]*background:\s*var\(--uwe-tone-solid\)/);
   assert.match(css, /\.uwe-flag\s*\{[^}]*background:\s*var\(--uwe-tone-mark\)/);
   ["apply", "watch", "maybe", "pass"].forEach((action) => {
     assert.match(css, new RegExp(`\\.uwe-card-panel--${action},`));
   });
+});
+
+test("recommended actions share one accent at graded strength", () => {
+  const css = readFileSync("src/content/upworkContentScript.css", "utf8");
+  const verdictTone = (action) => {
+    const match = css.match(
+      new RegExp(`\\.uwe-card-panel--${action},[^{]*\\{([^}]*)\\}`)
+    );
+    assert.ok(match, `missing verdict tone for ${action}`);
+    return match[1];
+  };
+
+  assert.match(verdictTone("apply"), /--uwe-tone-solid:\s*var\(--uwe-accent-solid\)/);
+  assert.match(verdictTone("watch"), /--uwe-tone-solid:\s*var\(--uwe-accent-strong\)/);
+  assert.match(verdictTone("maybe"), /--uwe-tone-solid:\s*var\(--uwe-accent-soft\)/);
+  assert.match(verdictTone("pass"), /--uwe-tone-solid:\s*transparent/);
+  ["apply", "watch", "maybe"].forEach((action) => {
+    assert.match(verdictTone(action), /--uwe-tone-mark:\s*var\(--uwe-accent-mark\)/);
+  });
+  assert.doesNotMatch(verdictTone("pass"), /--uwe-accent/);
+  // Only the fill carries the accent; the score and label stay in plain ink.
+  ["watch", "maybe"].forEach((action) => {
+    assert.match(verdictTone(action), /--uwe-tone-on-solid:\s*var\(--uwe-ink\)/);
+  });
+  // Tabular digits look loose in Upwork's typeface; scores use proportional figures.
+  assert.doesNotMatch(css, /tabular-nums/);
+  // Blue and amber verdict colours are gone; amber and red remain for warnings only.
+  assert.doesNotMatch(css, /--uwe-info-/);
+  assert.doesNotMatch(css, /--uwe-warn-solid/);
+  assert.match(css, /\.uwe-tone--fair\s*\{[^}]*--uwe-warn-mark/);
+  assert.match(css, /\.uwe-tone--weak\s*\{[^}]*--uwe-bad-mark/);
+  assert.match(
+    css,
+    /\.uwe-choice\[aria-pressed="true"\]\s*\{[^}]*border-color:\s*var\(--uwe-accent\)/
+  );
 });
 
 test("injected UI inherits the host typeface and keeps forced themes readable", () => {

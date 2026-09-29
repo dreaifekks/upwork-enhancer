@@ -3,7 +3,8 @@
  *
  * The strip and review panel borrow the host page's typeface and sit on its
  * surface, so neutrals are expressed as translucent ink instead of fixed
- * grays. Only status tones and the brand accent carry their own hue.
+ * grays. Green is the only accent and marks how strongly a job is
+ * recommended; amber and red are reserved for warnings.
  */
 
 .uwe-card-panel,
@@ -22,6 +23,8 @@
   --uwe-line-strong: rgb(24 24 24 / 30%);
   --uwe-fill: rgb(24 24 24 / 6%);
   --uwe-fill-strong: rgb(24 24 24 / 11%);
+  --uwe-capsule-fill: rgb(24 24 24 / 7%);
+  --uwe-capsule-line: rgb(24 24 24 / 20%);
   --uwe-surface: #ffffff;
   --uwe-input: #ffffff;
   --uwe-tip-bg: #181818;
@@ -30,29 +33,14 @@
   --uwe-accent: #108a00;
   --uwe-accent-solid: #108a00;
   --uwe-accent-solid-hover: #0c7400;
-  --uwe-good-ink: #0b6b00;
-  --uwe-good-fill: rgb(16 138 0 / 12%);
-  --uwe-good-line: rgb(16 138 0 / 34%);
-  --uwe-good-mark: #14a800;
-  --uwe-good-solid: #108a00;
-  --uwe-info-ink: #1546b0;
-  --uwe-info-fill: rgb(31 87 195 / 12%);
-  --uwe-info-line: rgb(31 87 195 / 32%);
-  --uwe-info-mark: #1f57c3;
-  --uwe-info-solid: #1f57c3;
+  --uwe-accent-strong: rgb(16 138 0 / 45%);
+  --uwe-accent-soft: rgb(16 138 0 / 20%);
+  --uwe-accent-ink: #0a6300;
+  --uwe-accent-mark: #14a800;
   --uwe-warn-ink: #7a4f00;
-  --uwe-warn-fill: rgb(240 168 0 / 20%);
-  --uwe-warn-line: rgb(200 130 0 / 42%);
   --uwe-warn-mark: #e69a00;
-  --uwe-warn-solid: #a36100;
   --uwe-bad-ink: #a3241c;
-  --uwe-bad-fill: rgb(217 58 47 / 12%);
   --uwe-bad-mark: #d93a2f;
-  --uwe-mute-ink: #4d4d4d;
-  --uwe-mute-fill: rgb(24 24 24 / 6%);
-  --uwe-mute-line: rgb(24 24 24 / 16%);
-  --uwe-mute-mark: #8a8a8a;
-  --uwe-mute-solid: rgb(24 24 24 / 10%);
   color-scheme: light;
 }
 
@@ -64,102 +52,84 @@
   --uwe-line-strong: rgb(255 255 255 / 28%);
   --uwe-fill: rgb(255 255 255 / 8%);
   --uwe-fill-strong: rgb(255 255 255 / 14%);
+  --uwe-capsule-fill: rgb(255 255 255 / 9%);
+  --uwe-capsule-line: rgb(255 255 255 / 22%);
   --uwe-surface: #242424;
   --uwe-input: rgb(0 0 0 / 24%);
   --uwe-tip-bg: #383838;
   --uwe-tip-ink: #ffffff;
   --uwe-shadow: 0 8px 28px rgb(0 0 0 / 46%);
   --uwe-accent: #14a800;
-  --uwe-good-ink: #7bdc5f;
-  --uwe-good-fill: rgb(20 168 0 / 20%);
-  --uwe-good-line: rgb(20 168 0 / 46%);
-  --uwe-good-mark: #14a800;
-  --uwe-info-ink: #8db8ff;
-  --uwe-info-fill: rgb(59 124 240 / 22%);
-  --uwe-info-line: rgb(91 149 245 / 46%);
-  --uwe-info-mark: #5b95f5;
+  --uwe-accent-strong: rgb(20 168 0 / 45%);
+  --uwe-accent-soft: rgb(20 168 0 / 24%);
+  --uwe-accent-ink: #7bdc5f;
   --uwe-warn-ink: #f5c45e;
-  --uwe-warn-fill: rgb(240 168 0 / 18%);
-  --uwe-warn-line: rgb(240 168 0 / 42%);
   --uwe-warn-mark: #f0a800;
   --uwe-bad-ink: #ff9d94;
-  --uwe-bad-fill: rgb(229 72 61 / 22%);
   --uwe-bad-mark: #ef5a4f;
-  --uwe-mute-ink: #d0d0d0;
-  --uwe-mute-fill: rgb(255 255 255 / 8%);
-  --uwe-mute-line: rgb(255 255 255 / 16%);
-  --uwe-mute-mark: #8c8c8c;
-  --uwe-mute-solid: rgb(255 255 255 / 14%);
   color-scheme: dark;
 }
 
-/* Tones: score quality (good / fair / weak) and recommended action. */
+/* Score quality: drives meters, flags, and the risk label. */
 
 .uwe-tone--good {
-  --uwe-tone-ink: var(--uwe-good-ink);
-  --uwe-tone-fill: var(--uwe-good-fill);
-  --uwe-tone-mark: var(--uwe-good-mark);
+  --uwe-tone-ink: var(--uwe-accent-ink);
+  --uwe-tone-mark: var(--uwe-accent-mark);
 }
 
 .uwe-tone--fair {
   --uwe-tone-ink: var(--uwe-warn-ink);
-  --uwe-tone-fill: var(--uwe-warn-fill);
   --uwe-tone-mark: var(--uwe-warn-mark);
 }
 
 .uwe-tone--weak {
   --uwe-tone-ink: var(--uwe-bad-ink);
-  --uwe-tone-fill: var(--uwe-bad-fill);
   --uwe-tone-mark: var(--uwe-bad-mark);
 }
 
+/*
+ * Recommended action: the verdict pill and score ring are always the green
+ * accent when a job is worth a look, and its strength says how far to lean
+ * in: solid for Apply, a strong wash for Watch, a light wash for Maybe. Pass
+ * gets no accent at all, so green never marks a job to skip. The text on the
+ * pill stays in plain ink; only the fill carries the accent.
+ */
+
 .uwe-card-panel--apply,
 .uwe-action--apply,
-.uwe-choice--apply,
 .uwe-score-ring--apply {
-  --uwe-tone-ink: var(--uwe-good-ink);
-  --uwe-tone-fill: var(--uwe-good-fill);
-  --uwe-tone-line: var(--uwe-good-line);
-  --uwe-tone-mark: var(--uwe-good-mark);
-  --uwe-tone-solid: var(--uwe-good-solid);
+  --uwe-tone-mark: var(--uwe-accent-mark);
+  --uwe-tone-solid: var(--uwe-accent-solid);
   --uwe-tone-on-solid: #ffffff;
 }
 
 .uwe-card-panel--watch,
 .uwe-action--watch,
-.uwe-choice--watch,
 .uwe-score-ring--watch {
-  --uwe-tone-ink: var(--uwe-info-ink);
-  --uwe-tone-fill: var(--uwe-info-fill);
-  --uwe-tone-line: var(--uwe-info-line);
-  --uwe-tone-mark: var(--uwe-info-mark);
-  --uwe-tone-solid: var(--uwe-info-solid);
-  --uwe-tone-on-solid: #ffffff;
+  --uwe-tone-mark: var(--uwe-accent-mark);
+  --uwe-tone-solid: var(--uwe-accent-strong);
+  --uwe-tone-on-solid: var(--uwe-ink);
 }
 
 .uwe-card-panel--maybe,
 .uwe-action--maybe,
-.uwe-choice--maybe,
 .uwe-score-ring--maybe {
-  --uwe-tone-ink: var(--uwe-warn-ink);
-  --uwe-tone-fill: var(--uwe-warn-fill);
-  --uwe-tone-line: var(--uwe-warn-line);
-  --uwe-tone-mark: var(--uwe-warn-mark);
-  --uwe-tone-solid: var(--uwe-warn-solid);
-  --uwe-tone-on-solid: #ffffff;
+  --uwe-tone-mark: var(--uwe-accent-mark);
+  --uwe-tone-solid: var(--uwe-accent-soft);
+  --uwe-tone-on-solid: var(--uwe-ink);
 }
 
-/* Pass stays neutral so a feed full of skips does not shout. */
 .uwe-card-panel--pass,
 .uwe-action--pass,
-.uwe-choice--pass,
 .uwe-score-ring--pass {
-  --uwe-tone-ink: var(--uwe-mute-ink);
-  --uwe-tone-fill: var(--uwe-mute-fill);
-  --uwe-tone-line: var(--uwe-mute-line);
-  --uwe-tone-mark: var(--uwe-mute-mark);
-  --uwe-tone-solid: var(--uwe-mute-solid);
-  --uwe-tone-on-solid: var(--uwe-mute-ink);
+  --uwe-tone-mark: var(--uwe-ink-3);
+  --uwe-tone-solid: transparent;
+  --uwe-tone-on-solid: var(--uwe-ink-2);
+}
+
+/* The review panel shows a single verdict, so even Pass keeps a chip there. */
+.uwe-action--pass {
+  --uwe-tone-solid: var(--uwe-fill-strong);
 }
 
 /* ---------- Shared pieces ---------- */
@@ -279,7 +249,6 @@
 
 .uwe-badge > strong {
   color: var(--uwe-ink);
-  font-variant-numeric: tabular-nums;
 }
 
 .uwe-flag {
@@ -305,6 +274,10 @@
   font-weight: 600;
 }
 
+.uwe-card-panel--pass .uwe-badge--verdict {
+  padding-right: 0;
+}
+
 .uwe-badge--context {
   max-width: min(320px, 100%);
   min-height: 26px;
@@ -324,8 +297,8 @@
 
 /*
  * The strip is what gets scanned while skimming the feed, so unlike the rest
- * of the injected UI it carries its own surface: a capsule tinted by the
- * verdict, led by a solid verdict pill.
+ * of the injected UI it carries its own surface. The neutral capsule sets it
+ * apart from the job card; the verdict pill inside carries the emphasis.
  */
 .uwe-card-panel {
   display: flex;
@@ -337,8 +310,8 @@
   margin: 0 0 12px;
   padding: 3px 14px 3px 3px;
   border-radius: 9px;
-  background: var(--uwe-tone-fill);
-  box-shadow: inset 0 0 0 1px var(--uwe-tone-line);
+  background: var(--uwe-capsule-fill);
+  box-shadow: inset 0 0 0 1px var(--uwe-capsule-line);
   font-size: 13px;
   font-weight: 400;
   line-height: 20px;
@@ -474,7 +447,6 @@
   grid-area: 1 / 1;
   color: var(--uwe-ink);
   font-size: 15px;
-  font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 1;
 }
@@ -637,7 +609,7 @@
 }
 
 .uwe-sidebar .uwe-btn--secondary:hover:not(:disabled) {
-  background: var(--uwe-good-fill);
+  background: var(--uwe-accent-soft);
 }
 
 .uwe-sidebar .uwe-btn--secondary:disabled {
@@ -785,7 +757,7 @@
 }
 
 .uwe-section--for .uwe-list .uwe-icon {
-  color: var(--uwe-good-mark);
+  color: var(--uwe-accent-mark);
 }
 
 .uwe-section--against .uwe-list .uwe-icon {
@@ -1032,9 +1004,9 @@
 }
 
 .uwe-sidebar .uwe-choice[aria-pressed="true"] {
-  border-color: var(--uwe-tone-ink);
-  background: var(--uwe-tone-fill);
-  color: var(--uwe-tone-ink);
+  border-color: var(--uwe-accent);
+  background: var(--uwe-accent-soft);
+  color: var(--uwe-accent-ink);
 }
 
 .uwe-actions {

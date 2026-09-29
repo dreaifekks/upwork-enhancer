@@ -1304,7 +1304,7 @@
 
   function decisionButton(action, selectedAction) {
     return `
-      <button class="uwe-choice uwe-choice--${action}" type="button" data-uwe-decision="${action}" aria-pressed="${
+      <button class="uwe-choice" type="button" data-uwe-decision="${action}" aria-pressed="${
         action === selectedAction ? "true" : "false"
       }" aria-label="${escapeHtml(
         t("sidebar.selectAction", { action: t(`action.${action}`) })
