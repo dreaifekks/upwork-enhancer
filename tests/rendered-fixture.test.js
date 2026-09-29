@@ -64,7 +64,20 @@ test("renders score context labels for job cards and client history", (t) => {
       /class="uwe-job-title">Chrome extension to qualify Upwork leads - Web Development</
     );
     assert.match(result.stdout, /data-uwe-ai(=""|) disabled(=""|)/);
-    assert.match(result.stdout, />Job<\/span>/);
+    assert.doesNotMatch(result.stdout, />Job<\/span>/);
+    assert.match(
+      result.stdout,
+      /class="uwe-card-panel uwe-card-panel--apply[^"]*"[^>]*><span class="uwe-badge uwe-badge--verdict uwe-score-help"[^>]*><strong>95<\/strong><span>Apply<\/span>/
+    );
+    assert.match(result.stdout, /class="uwe-card-panel uwe-card-panel--pass[^"]*"/);
+    assert.match(
+      result.stdout,
+      /class="uwe-badge uwe-badge--metric uwe-tone--weak uwe-score-help"[^>]*><i class="uwe-flag" aria-hidden="true"><\/i><span>Risk<\/span><strong>High<\/strong>/
+    );
+    assert.doesNotMatch(
+      result.stdout,
+      /uwe-tone--\w+ uwe-score-help"[^>]*><i class="uwe-flag"[^>]*><\/i><span>Risk<\/span><strong>Low</
+    );
     assert.match(
       result.stdout,
       /History: 3D Artist Needed for Furniture 3D Modeling/
@@ -184,6 +197,14 @@ test("renders Upwork slider detail review with h4 title and long summary", (t) =
     assert.doesNotMatch(result.stdout, /Competition signals are incomplete/);
     assert.match(result.stdout, /class="uwe-sidebar__compact"/);
     assert.match(result.stdout, /aria-expanded="false"/);
+    assert.match(result.stdout, /class="uwe-sidebar[^"]*uwe-sidebar--collapsed/);
+    assert.match(result.stdout, /class="uwe-verdict__reason"/);
+    assert.match(
+      result.stdout,
+      /class="uwe-breakdown__row uwe-tone--(good|fair|weak) uwe-score-help"/
+    );
+    assert.match(result.stdout, /class="uwe-section uwe-section--for"/);
+    assert.match(result.stdout, /class="uwe-section uwe-section--against"/);
     assert.doesNotMatch(result.stdout, /History: Open job in a new window/);
     const reviewIndex = result.stdout.indexOf('class="uwe-sidebar');
     const summaryIndex = result.stdout.indexOf("Summary Job Description");

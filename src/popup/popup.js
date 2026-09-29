@@ -267,7 +267,7 @@
       remove.className = "tag-editor__remove";
       remove.type = "button";
       remove.setAttribute("aria-label", `Remove ${value}`);
-      remove.textContent = "x";
+      remove.textContent = "×";
       remove.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -332,18 +332,26 @@
           time: new Date(settings.profileUpdatedAt).toLocaleString()
         })
       : "";
-    controls.profileStatus.textContent = [profile.title, settings.profileUrl, updated]
-      .filter(Boolean)
-      .join(" | ");
+    controls.profileStatus.replaceChildren(
+      ...[profile.title, settings.profileUrl, updated]
+        .filter(Boolean)
+        .map((line, index) => {
+          const element = document.createElement(index === 0 ? "strong" : "span");
+          element.textContent = line;
+          element.title = line;
+          return element;
+        })
+    );
     controls.importProfile.textContent = UWE.t(settings.language, "popup.updateProfile");
     controls.openProfile.disabled = false;
   }
 
   function renderAiStatus() {
-    controls.aiStatus.textContent =
-      settings.api && settings.api.configured
-        ? `${UWE.t(settings.language, "popup.aiConfigured")}: ${settings.api.model}`
-        : UWE.t(settings.language, "popup.aiNotConfigured");
+    const configured = Boolean(settings.api && settings.api.configured);
+    controls.aiStatus.classList.toggle("is-ready", configured);
+    controls.aiStatus.textContent = configured
+      ? `${UWE.t(settings.language, "popup.aiConfigured")}: ${settings.api.model}`
+      : UWE.t(settings.language, "popup.aiNotConfigured");
   }
 
   function applyLanguage(nextLanguage) {

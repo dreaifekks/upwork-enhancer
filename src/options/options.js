@@ -379,7 +379,7 @@
       remove.className = "tag-editor__remove";
       remove.type = "button";
       remove.setAttribute("aria-label", `Remove ${value}`);
-      remove.textContent = "x";
+      remove.textContent = "×";
       remove.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

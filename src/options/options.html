@@ -11,8 +11,8 @@
       <header class="settings-header">
         <div>
           <h1 data-i18n="options.title">Upwork Enhancer Settings</h1>
-          <p data-i18n="options.profileHelp">
-            Short context used by scoring and optional AI.
+          <p data-i18n="options.subtitle">
+            Tune how jobs are scored. Settings are stored in this browser.
           </p>
         </div>
         <button type="button" id="resetDefaults" data-i18n="options.reset">
@@ -22,139 +22,157 @@
 
       <form id="settingsForm" class="settings-form">
         <section class="settings-section">
-          <h2 data-i18n="options.language">Display language</h2>
-          <div class="settings-grid settings-grid--compact">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.sectionProfile">Profile</h2>
+            <p data-i18n="options.profileHelp">
+              Short context used by scoring and optional AI.
+            </p>
+          </div>
+          <div class="settings-section__fields">
+            <div class="settings-actions">
+              <button
+                type="button"
+                id="importProfile"
+                class="secondary-button"
+                data-i18n="options.importCurrentProfile"
+              >
+                Import current profile tab
+              </button>
+              <button
+                type="button"
+                id="openProfile"
+                class="secondary-button"
+                data-i18n="options.openProfile"
+              >
+                Open profile URL
+              </button>
+              <span id="profileMeta"></span>
+            </div>
             <label class="field">
-              <span data-i18n="options.language">Display language</span>
-              <select name="language" id="language">
-                <option value="en" data-i18n="options.english">English</option>
-                <option value="zh" data-i18n="options.chinese">Chinese</option>
-              </select>
+              <span data-i18n="options.profileUrl">Profile URL</span>
+              <input name="profileUrl" type="url" placeholder="https://www.upwork.com/freelancers/~..." />
             </label>
             <label class="field">
-              <span data-i18n="options.theme">Theme</span>
-              <select name="theme" id="theme">
-                <option value="auto" data-i18n="options.themeAuto">Auto</option>
-                <option value="light" data-i18n="options.themeLight">Light</option>
-                <option value="dark" data-i18n="options.themeDark">Dark</option>
-              </select>
+              <span data-i18n="options.profile">Freelancer profile summary</span>
+              <textarea name="profileSummary" rows="4"></textarea>
             </label>
           </div>
         </section>
 
         <section class="settings-section">
-          <h2 data-i18n="options.profile">Freelancer profile summary</h2>
-          <div class="settings-actions">
-            <button
-              type="button"
-              id="importProfile"
-              class="secondary-button"
-              data-i18n="options.importCurrentProfile"
-            >
-              Import current profile tab
-            </button>
-            <button
-              type="button"
-              id="openProfile"
-              class="secondary-button"
-              data-i18n="options.openProfile"
-            >
-              Open profile URL
-            </button>
-            <span id="profileMeta"></span>
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.sectionMatching">Matching</h2>
+            <p data-i18n="options.sectionMatchingHelp">
+              Preferred skills and project types raise the match score; avoided ones lower it.
+            </p>
           </div>
-          <label class="field">
-            <span data-i18n="options.profile">Freelancer profile summary</span>
-            <textarea name="profileSummary" rows="4"></textarea>
-          </label>
-          <label class="field">
-            <span data-i18n="options.profileUrl">Profile URL</span>
-            <input name="profileUrl" type="url" placeholder="https://www.upwork.com/freelancers/~..." />
-          </label>
-        </section>
-
-        <section class="settings-grid">
-          <label class="field">
-            <span data-i18n="options.preferredSkills">Preferred skills</span>
-            <input type="hidden" name="preferredSkills" />
-            <div class="tag-editor" data-tag-editor="preferredSkills">
-              <div class="tag-editor__tags" data-tag-list></div>
-              <input
-                class="tag-editor__input"
-                type="text"
-                autocomplete="off"
-                data-tag-input
-              />
-            </div>
-          </label>
-          <label class="field">
-            <span data-i18n="options.avoidedSkills">Avoided skills or categories</span>
-            <input type="hidden" name="avoidedSkills" />
-            <div class="tag-editor" data-tag-editor="avoidedSkills">
-              <div class="tag-editor__tags" data-tag-list></div>
-              <input
-                class="tag-editor__input"
-                type="text"
-                autocomplete="off"
-                data-tag-input
-              />
-            </div>
-          </label>
-          <label class="field">
-            <span data-i18n="options.projectTypes">Preferred project types</span>
-            <input type="hidden" name="preferredProjectTypes" />
-            <div class="tag-editor" data-tag-editor="preferredProjectTypes">
-              <div class="tag-editor__tags" data-tag-list></div>
-              <input
-                class="tag-editor__input"
-                type="text"
-                autocomplete="off"
-                data-tag-input
-              />
-            </div>
-          </label>
-          <label class="field">
-            <span data-i18n="options.blacklistedPhrases">Blacklisted phrases</span>
-            <input type="hidden" name="blacklistedPhrases" />
-            <div class="tag-editor" data-tag-editor="blacklistedPhrases">
-              <div class="tag-editor__tags" data-tag-list></div>
-              <input
-                class="tag-editor__input"
-                type="text"
-                autocomplete="off"
-                data-tag-input
-              />
-            </div>
-          </label>
-          <label class="field">
-            <span data-i18n="options.offPlatformPhrases">Off-platform risk phrases</span>
-            <input type="hidden" name="offPlatformPhrases" />
-            <div class="tag-editor" data-tag-editor="offPlatformPhrases">
-              <div class="tag-editor__tags" data-tag-list></div>
-              <input
-                class="tag-editor__input"
-                type="text"
-                autocomplete="off"
-                data-tag-input
-              />
-            </div>
-          </label>
-        </section>
-
-        <section class="settings-grid settings-grid--compact">
-          <label class="field">
-            <span data-i18n="options.minimumHourlyRate">Minimum hourly rate</span>
-            <input name="minimumHourlyRate" type="number" min="0" step="1" />
-          </label>
-          <label class="field">
-            <span data-i18n="options.minimumFixedBudget">Minimum fixed budget</span>
-            <input name="minimumFixedBudget" type="number" min="0" step="50" />
-          </label>
+          <div class="settings-section__fields">
+            <label class="field">
+              <span data-i18n="options.preferredSkills">Preferred skills</span>
+              <input type="hidden" name="preferredSkills" />
+              <div class="tag-editor" data-tag-editor="preferredSkills">
+                <div class="tag-editor__tags" data-tag-list></div>
+                <input
+                  class="tag-editor__input"
+                  type="text"
+                  autocomplete="off"
+                  data-tag-input
+                />
+              </div>
+            </label>
+            <label class="field">
+              <span data-i18n="options.projectTypes">Preferred project types</span>
+              <input type="hidden" name="preferredProjectTypes" />
+              <div class="tag-editor" data-tag-editor="preferredProjectTypes">
+                <div class="tag-editor__tags" data-tag-list></div>
+                <input
+                  class="tag-editor__input"
+                  type="text"
+                  autocomplete="off"
+                  data-tag-input
+                />
+              </div>
+            </label>
+            <label class="field">
+              <span data-i18n="options.avoidedSkills">Avoided skills or categories</span>
+              <input type="hidden" name="avoidedSkills" />
+              <div class="tag-editor" data-tag-editor="avoidedSkills">
+                <div class="tag-editor__tags" data-tag-list></div>
+                <input
+                  class="tag-editor__input"
+                  type="text"
+                  autocomplete="off"
+                  data-tag-input
+                />
+              </div>
+            </label>
+          </div>
         </section>
 
         <section class="settings-section">
-          <h2 data-i18n="options.weights">Scoring weights</h2>
-          <div class="settings-grid settings-grid--compact">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.sectionBudget">Budget floor</h2>
+            <p data-i18n="options.sectionBudgetHelp">
+              Jobs priced below these amounts lose match points.
+            </p>
+          </div>
+          <div class="settings-section__fields settings-grid">
+            <label class="field">
+              <span data-i18n="options.minimumHourlyRate">Minimum hourly rate</span>
+              <input name="minimumHourlyRate" type="number" min="0" step="1" />
+            </label>
+            <label class="field">
+              <span data-i18n="options.minimumFixedBudget">Minimum fixed budget</span>
+              <input name="minimumFixedBudget" type="number" min="0" step="50" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.sectionRisk">Risk phrases</h2>
+            <p data-i18n="options.sectionRiskHelp">
+              A blacklisted phrase always recommends Pass. Off-platform phrases lower the risk score.
+            </p>
+          </div>
+          <div class="settings-section__fields">
+            <label class="field">
+              <span data-i18n="options.blacklistedPhrases">Blacklisted phrases</span>
+              <input type="hidden" name="blacklistedPhrases" />
+              <div class="tag-editor" data-tag-editor="blacklistedPhrases">
+                <div class="tag-editor__tags" data-tag-list></div>
+                <input
+                  class="tag-editor__input"
+                  type="text"
+                  autocomplete="off"
+                  data-tag-input
+                />
+              </div>
+            </label>
+            <label class="field">
+              <span data-i18n="options.offPlatformPhrases">Off-platform risk phrases</span>
+              <input type="hidden" name="offPlatformPhrases" />
+              <div class="tag-editor" data-tag-editor="offPlatformPhrases">
+                <div class="tag-editor__tags" data-tag-list></div>
+                <input
+                  class="tag-editor__input"
+                  type="text"
+                  autocomplete="off"
+                  data-tag-input
+                />
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.weights">Scoring weights</h2>
+            <p data-i18n="options.weightsHelp">
+              Relative importance of each dimension. Values are normalized to 100%.
+            </p>
+          </div>
+          <div class="settings-section__fields settings-grid settings-grid--compact">
             <label class="field">
               <span data-i18n="options.weightMatch">Match</span>
               <input name="weightMatch" type="number" min="0" step="0.05" />
@@ -175,8 +193,13 @@
         </section>
 
         <section class="settings-section">
-          <h2 data-i18n="options.thresholds">Action thresholds</h2>
-          <div class="settings-grid settings-grid--compact">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.thresholds">Action thresholds</h2>
+            <p data-i18n="options.thresholdsHelp">
+              Overall score needed for each recommendation. Keep Apply ≥ Watch ≥ Pass.
+            </p>
+          </div>
+          <div class="settings-section__fields settings-grid settings-grid--compact">
             <label class="field">
               <span data-i18n="options.thresholdApply">Apply</span>
               <input name="thresholdApply" type="number" min="0" max="100" step="1" required />
@@ -193,34 +216,65 @@
         </section>
 
         <section class="settings-section">
-          <h2 data-i18n="options.ai">AI assistance</h2>
-          <label class="check-field">
-            <input name="apiEnabled" type="checkbox" />
-            <span data-i18n="options.aiEnabled">Enable AI actions</span>
-          </label>
-          <div class="settings-grid settings-grid--compact">
-            <label class="field">
-              <span data-i18n="options.apiBaseUrl">API base URL</span>
-              <input name="apiBaseUrl" type="url" placeholder="https://api.openai.com/v1" />
-            </label>
-            <label class="field">
-              <span data-i18n="options.model">Model</span>
-              <input name="apiModel" type="text" />
-            </label>
-            <label class="field settings-grid__span">
-              <span data-i18n="options.apiKey">API key</span>
-              <input name="apiKey" type="password" autocomplete="off" />
-            </label>
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.ai">AI assistance</h2>
+            <p data-i18n="options.aiHelp">
+              Optional. When you start an AI action, the job details, your profile summary, and
+              matching answer templates are sent to the endpoint you configure.
+            </p>
           </div>
-          <div class="settings-actions">
-            <button
-              type="button"
-              id="testAi"
-              class="secondary-button"
-              data-i18n="options.aiTest"
-            >
-              Test AI connection
-            </button>
+          <div class="settings-section__fields">
+            <label class="check-field">
+              <input name="apiEnabled" type="checkbox" />
+              <span data-i18n="options.aiEnabled">Enable AI actions</span>
+            </label>
+            <div class="settings-grid">
+              <label class="field">
+                <span data-i18n="options.apiBaseUrl">API base URL</span>
+                <input name="apiBaseUrl" type="url" placeholder="https://api.openai.com/v1" />
+              </label>
+              <label class="field">
+                <span data-i18n="options.model">Model</span>
+                <input name="apiModel" type="text" />
+              </label>
+              <label class="field settings-grid__span">
+                <span data-i18n="options.apiKey">API key</span>
+                <input name="apiKey" type="password" autocomplete="off" />
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button
+                type="button"
+                id="testAi"
+                class="secondary-button"
+                data-i18n="options.aiTest"
+              >
+                Test AI connection
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section__intro">
+            <h2 data-i18n="options.sectionAppearance">Appearance</h2>
+          </div>
+          <div class="settings-section__fields settings-grid">
+            <label class="field">
+              <span data-i18n="options.language">Display language</span>
+              <select name="language" id="language">
+                <option value="en" data-i18n="options.english">English</option>
+                <option value="zh" data-i18n="options.chinese">Chinese</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="options.theme">Theme</span>
+              <select name="theme" id="theme">
+                <option value="auto" data-i18n="options.themeAuto">Auto</option>
+                <option value="light" data-i18n="options.themeLight">Light</option>
+                <option value="dark" data-i18n="options.themeDark">Dark</option>
+              </select>
+            </label>
           </div>
         </section>
 

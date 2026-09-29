@@ -21,11 +21,13 @@
   let detailRenderGeneration = 0;
   let sidebarCollapsed = true;
   let aiRenderTimer = null;
+  let sidebarResizeObserver = null;
   const detailScoreCache = new Map();
   const listJobCache = new Map();
   const detailDraftCache = new Map();
   const DETAIL_SCORE_CACHE_MAX = 30;
   const QUESTION_TEMPLATE_MATCH_THRESHOLD = 0.38;
+  const SIDEBAR_NARROW_WIDTH = 520;
 
   if (document.documentElement) {
     document.documentElement.setAttribute(
@@ -77,6 +79,12 @@
     const theme = currentTheme();
     element.classList.toggle("uwe-theme-dark", theme === "dark");
     element.classList.toggle("uwe-theme-light", theme === "light");
+    // The injected UI normally sits on Upwork's own surface. A forced theme
+    // that disagrees with the page needs its own backdrop to stay readable.
+    element.classList.toggle(
+      "uwe-surface-solid",
+      theme === settings.theme && theme !== detectPageTheme()
+    );
     element.setAttribute("data-uwe-theme", theme);
   }
 
@@ -379,25 +387,86 @@
     return null;
   }
 
-  function badge(label, value, modifier, helpText) {
-    const className = ["uwe-badge", modifier].filter(Boolean).join(" ");
+  const ICON_PATHS = {
+    check: '<path d="M3.5 8.4l2.9 2.9 6.1-6.6"/>',
+    minus: '<path d="M4 8h8"/>',
+    alert:
+      '<path d="M8 2.5l6.1 10.6H1.9L8 2.5z"/><path d="M8 6.7v2.9"/><path d="M8 11.3v.1"/>',
+    question:
+      '<circle cx="8" cy="8" r="5.7"/><path d="M6.3 6.6a1.75 1.75 0 0 1 3.4.5c0 1.1-1.7 1.4-1.7 2.4"/><path d="M8 11.3v.1"/>',
+    chevron: '<path d="M4 6l4 4 4-4"/>'
+  };
+
+  function icon(name) {
+    return `<svg class="uwe-icon uwe-icon--${name}" viewBox="0 0 16 16" aria-hidden="true" focusable="false">${
+      ICON_PATHS[name] || ""
+    }</svg>`;
+  }
+
+  // Sub-scores start near 50 and move with evidence, so anything under 50 is
+  // net-negative and worth flagging; 70+ means the positive signals dominate.
+  function toneForScore(value) {
+    const score = Number(value) || 0;
+    if (score >= 70) return "good";
+    return score >= 50 ? "fair" : "weak";
+  }
+
+  function toneForRisk(level) {
+    if (level === "low") return "good";
+    return level === "medium" ? "fair" : "weak";
+  }
+
+  function badge(label, value, modifier, helpText, flagTone) {
+    const className = ["uwe-badge", modifier, flagTone && `uwe-tone--${flagTone}`]
+      .filter(Boolean)
+      .join(" ");
     const helpClass = helpText ? " uwe-score-help" : "";
     const helpAttrs = helpText ? ' tabindex="0" role="button"' : "";
     const helpTip = helpText ? scoreTip(helpText) : "";
-    return `<span class="${className}${helpClass}"${helpAttrs}><span>${escapeHtml(label)}</span><strong>${escapeHtml(
+    const flag = flagTone ? '<i class="uwe-flag" aria-hidden="true"></i>' : "";
+    return `<span class="${className}${helpClass}"${helpAttrs}>${flag}<span>${escapeHtml(label)}</span><strong>${escapeHtml(
       value
     )}</strong>${helpTip}</span>`;
+  }
+
+  // A flag marks what needs a second look: weak sub-scores and any elevated
+  // risk. Middling sub-scores stay quiet so the flags keep their meaning.
+  function metricBadge(metric, value, helpText, tone) {
+    const flagged = tone === "weak" || (metric === "risk" && tone === "fair");
+    return badge(
+      t(`badge.${metric}`),
+      value,
+      "uwe-badge--metric",
+      helpText,
+      flagged ? tone : ""
+    );
+  }
+
+  function verdictBadge(result) {
+    const action = result.recommendedAction;
+    return `<span class="uwe-badge uwe-badge--verdict uwe-score-help" tabindex="0" role="button"><strong>${
+      result.overallScore
+    }</strong><span>${escapeHtml(t(`action.${action}`))}</span>${scoreTip(
+      scoreHelp("overall"),
+      verdictReason(result)
+    )}</span>`;
+  }
+
+  function verdictReason(result) {
+    return result.actionGateReason ? localize(result.actionGateReason) : "";
   }
 
   function contextBadge(job) {
     const knownContexts = new Set(["job", "history", "clientJob"]);
     const context = knownContexts.has(job.context) ? job.context : "job";
+    // Ordinary job cards need no label; only mark entries that could be
+    // mistaken for the job being reviewed.
+    if (context === "job") return "";
     const label = t(`context.${context}`);
     const title = cleanLabelTitle(job.title);
-    const display = context !== "job" && title ? `${label}: ${title}` : label;
-    const tooltip = title ? `${label}: ${title}` : label;
+    const display = title ? `${label}: ${title}` : label;
     return `<span class="uwe-badge uwe-badge--context" title="${escapeHtml(
-      tooltip
+      display
     )}"><span>${escapeHtml(display)}</span></span>`;
   }
 
@@ -442,8 +511,9 @@
     return `${base} ${t(`badge.${metric}`)}: ${result[key]}.`;
   }
 
-  function scoreTip(text) {
-    return `<span class="uwe-score-tip" role="tooltip">${escapeHtml(text)}</span>`;
+  function scoreTip(text, lead) {
+    const leadHtml = lead ? `<strong>${escapeHtml(lead)}</strong>` : "";
+    return `<span class="uwe-score-tip" role="tooltip">${leadHtml}${escapeHtml(text)}</span>`;
   }
 
   function renderJobCard(card) {
@@ -470,7 +540,7 @@
     const cachedScore = cachedDetailScoreForJob(job);
     const result = cachedScore ? cachedScore.result : score(job);
     const panel = existing || document.createElement("div");
-    panel.className = "uwe-card-panel";
+    panel.className = `uwe-card-panel uwe-card-panel--${result.recommendedAction}`;
     applyTheme(panel);
     panel.setAttribute("data-uwe-job-id", result.jobId || "");
     panel.setAttribute("data-uwe-score-source", cachedScore ? "detail" : "list");
@@ -480,43 +550,43 @@
     );
     panel.innerHTML = [
       contextBadge(job),
-      badge(
-        t("badge.overall"),
-        String(result.overallScore),
-        "uwe-badge--overall",
-        scoreHelp("overall", result)
-      ),
-      badge(
-        "",
-        t(`action.${result.recommendedAction}`),
-        `uwe-badge--${result.recommendedAction}`,
-        scoreHelp("action", result)
-      ),
-      badge(t("badge.match"), String(result.matchScore), "", scoreHelp("match", result)),
-      badge(
-        t("badge.client"),
-        String(result.clientQualityScore),
-        "",
-        scoreHelp("client", result)
-      ),
-      badge(
-        t("badge.competition"),
-        String(result.competitionScore),
-        "",
-        scoreHelp("competition", result)
-      ),
-      badge(
-        t("badge.risk"),
-        t(`risk.${result.riskLevel}`),
-        `uwe-badge--risk-${result.riskLevel}`,
-        scoreHelp("risk", result)
-      )
+      verdictBadge(result),
+      metricBadges(result)
     ].join("");
 
     if (!existing) {
       insertCardPanel(card, panel);
     }
     card.setAttribute("data-uwe-text", nextText);
+  }
+
+  function metricBadges(result) {
+    return [
+      metricBadge(
+        "match",
+        String(result.matchScore),
+        scoreHelp("match", result),
+        toneForScore(result.matchScore)
+      ),
+      metricBadge(
+        "client",
+        String(result.clientQualityScore),
+        scoreHelp("client", result),
+        toneForScore(result.clientQualityScore)
+      ),
+      metricBadge(
+        "competition",
+        String(result.competitionScore),
+        scoreHelp("competition", result),
+        toneForScore(result.competitionScore)
+      ),
+      metricBadge(
+        "risk",
+        t(`risk.${result.riskLevel}`),
+        scoreHelp("risk", result),
+        toneForRisk(result.riskLevel)
+      )
+    ].join("");
   }
 
   function isAnchorTarget(card) {
@@ -560,11 +630,27 @@
     if (!sidebar) {
       sidebar = document.createElement("aside");
       sidebar.className = "uwe-sidebar";
+      observeSidebarWidth(sidebar);
     }
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
     applyTheme(sidebar);
     return sidebar;
+  }
+
+  // The panel lives in columns of very different widths (slider, full page,
+  // laptop breakpoints), so its layout follows its own width, not the window.
+  function syncSidebarWidth(sidebar) {
+    const width = sidebar.getBoundingClientRect().width;
+    if (!width) return;
+    sidebar.classList.toggle("uwe-sidebar--narrow", width < SIDEBAR_NARROW_WIDTH);
+  }
+
+  function observeSidebarWidth(sidebar) {
+    if (typeof ResizeObserver !== "function") return;
+    if (sidebarResizeObserver) sidebarResizeObserver.disconnect();
+    sidebarResizeObserver = new ResizeObserver(() => syncSidebarWidth(sidebar));
+    sidebarResizeObserver.observe(sidebar);
   }
 
   function placeSidebar(sidebar, placement, anchor) {
@@ -598,6 +684,7 @@
 
   function positionSidebar(sidebar) {
     if (!sidebar) return;
+    syncSidebarWidth(sidebar);
     if (sidebar.classList.contains("uwe-sidebar--inline")) {
       sidebar.style.width = "";
       sidebar.style.left = "";
@@ -900,93 +987,148 @@
     savedTags,
     templates
   ) {
-    const actionLabel = t(`action.${result.recommendedAction}`);
-    const reasonsFor = result.positiveReasons.map(localize);
-    const reasonsAgainst = result.negativeReasons.map(localize);
-    const riskNotes = result.riskNotes.map(localize);
-    const missingSignals = result.missingSignals.map(localize);
-    const actionReason = result.actionGateReason
-      ? [localize(result.actionGateReason)]
-      : [];
+    const action = result.recommendedAction;
+    const actionLabel = t(`action.${action}`);
+    const reason = verdictReason(result);
     return `
-      <div class="uwe-sidebar__header">
-        <h2 class="uwe-sidebar__title">${escapeHtml(t("sidebar.title"))}</h2>
-        <div class="uwe-sidebar__compact" aria-label="${escapeHtml(
-          `${t("badge.overall")} ${result.overallScore}, ${t(
-            "sidebar.recommendedActionSummary",
-            { action: actionLabel }
-          )}`
-        )}">
-          <strong>${result.overallScore}</strong>
-          <span>${escapeHtml(actionLabel)}</span>
-        </div>
-        <button class="uwe-sidebar__toggle" type="button" data-uwe-toggle aria-expanded="true" aria-controls="uwe-sidebar-body">${escapeHtml(
-          t("sidebar.collapse")
-        )}</button>
-      </div>
-      <div class="uwe-sidebar__body" id="uwe-sidebar-body">
-        <section class="uwe-summary" aria-label="${escapeHtml(t("sidebar.summary"))}">
-          <div class="uwe-score-ring uwe-score-help" tabindex="0" role="button">${result.overallScore}${scoreTip(
-            scoreHelp("overall", result)
-          )}</div>
-          <div class="uwe-summary__meta">
-            <div class="uwe-action uwe-action--${result.recommendedAction} uwe-score-help" tabindex="0" role="button" aria-label="${escapeHtml(
+      <div class="uwe-sidebar__header" role="group" aria-label="${escapeHtml(
+        t("sidebar.summary")
+      )}">
+        <div class="uwe-score-ring uwe-score-ring--${action} uwe-score-help" tabindex="0" role="button" aria-label="${escapeHtml(
+          `${t("badge.overall")} ${result.overallScore}`
+        )}">${scoreRing(result.overallScore)}<span class="uwe-score-ring__value">${
+          result.overallScore
+        }</span>${scoreTip(scoreHelp("overall", result))}</div>
+        <div class="uwe-sidebar__lead">
+          <div class="uwe-verdict">
+            <div class="uwe-action uwe-action--${action} uwe-score-help" tabindex="0" role="button" aria-label="${escapeHtml(
               t("sidebar.recommendedActionLabel", { action: actionLabel })
             )}">${escapeHtml(
               actionLabel
             )}${scoreTip(scoreHelp("action", result))}</div>
+            ${
+              reason
+                ? `<p class="uwe-verdict__reason"><span class="uwe-visually-hidden">${escapeHtml(
+                    t("sidebar.actionReason")
+                  )}: </span>${escapeHtml(reason)}</p>`
+                : ""
+            }
+          </div>
+          <div class="uwe-sidebar__compact">${metricBadges(result)}</div>
+          <div class="uwe-sidebar__caption">
+            <h2 class="uwe-sidebar__title">${escapeHtml(t("sidebar.title"))}</h2>
             <p class="uwe-job-title">${escapeHtml(job.title)}</p>
           </div>
-        </section>
-        ${listSection(t("sidebar.actionReason"), actionReason)}
-        <section class="uwe-breakdown">
-          ${scoreRow(t("badge.match"), result.matchScore, scoreHelp("match", result))}
-          ${scoreRow(t("badge.client"), result.clientQualityScore, scoreHelp("client", result))}
+        </div>
+        <button class="uwe-sidebar__toggle" type="button" data-uwe-toggle aria-expanded="true" aria-controls="uwe-sidebar-body"><span data-uwe-toggle-label>${escapeHtml(
+          t("sidebar.collapse")
+        )}</span>${icon("chevron")}</button>
+      </div>
+      <div class="uwe-sidebar__body" id="uwe-sidebar-body">
+        <section class="uwe-breakdown" aria-label="${escapeHtml(t("sidebar.breakdown"))}">
+          ${scoreRow(
+            t("badge.match"),
+            result.matchScore,
+            scoreHelp("match", result),
+            toneForScore(result.matchScore)
+          )}
+          ${scoreRow(
+            t("badge.client"),
+            result.clientQualityScore,
+            scoreHelp("client", result),
+            toneForScore(result.clientQualityScore)
+          )}
           ${scoreRow(
             t("badge.competition"),
             result.competitionScore,
-            scoreHelp("competition", result)
+            scoreHelp("competition", result),
+            toneForScore(result.competitionScore)
           )}
-          ${scoreRow(t("badge.risk"), result.riskScore, scoreHelp("risk", result))}
+          ${scoreRow(
+            t("badge.risk"),
+            result.riskScore,
+            scoreHelp("risk", result),
+            toneForRisk(result.riskLevel),
+            t(`risk.${result.riskLevel}`)
+          )}
         </section>
-        ${listSection(t("sidebar.reasonsFor"), reasonsFor)}
-        ${listSection(t("sidebar.reasonsAgainst"), reasonsAgainst)}
-        ${listSection(t("sidebar.risks"), riskNotes)}
-        ${listSection(t("sidebar.missing"), missingSignals)}
+        ${reasonColumns(result)}
         ${proposalQuestionsSection(job, templates)}
-        <section class="uwe-section">
-          <h3>${escapeHtml(t("sidebar.save"))}</h3>
-          <div class="uwe-decision-grid">
-            ${decisionButton("apply", selectedAction)}
-            ${decisionButton("watch", selectedAction)}
-            ${decisionButton("maybe", selectedAction)}
-            ${decisionButton("pass", selectedAction)}
+        <section class="uwe-section uwe-decision">
+          <div class="uwe-decision__choice">
+            <h3>${escapeHtml(t("sidebar.decision"))}</h3>
+            <div class="uwe-decision-grid">
+              ${decisionButton("apply", selectedAction)}
+              ${decisionButton("watch", selectedAction)}
+              ${decisionButton("maybe", selectedAction)}
+              ${decisionButton("pass", selectedAction)}
+            </div>
           </div>
-          <textarea class="uwe-note" data-uwe-note aria-label="${escapeHtml(
-            t("sidebar.notes")
-          )}" placeholder="${escapeHtml(
-            t("sidebar.notes")
-          )}">${escapeHtml(savedNote)}</textarea>
-          <input class="uwe-tags" data-uwe-tags aria-label="${escapeHtml(
-            t("sidebar.tags")
-          )}" placeholder="${escapeHtml(
-            t("sidebar.tags")
-          )}" value="${escapeHtml(savedTags)}" />
+          <div class="uwe-decision__fields">
+            <textarea class="uwe-note" rows="1" data-uwe-note aria-label="${escapeHtml(
+              t("sidebar.notes")
+            )}" placeholder="${escapeHtml(
+              t("sidebar.notes")
+            )}">${escapeHtml(savedNote)}</textarea>
+            <input class="uwe-tags" data-uwe-tags aria-label="${escapeHtml(
+              t("sidebar.tags")
+            )}" placeholder="${escapeHtml(
+              t("sidebar.tags")
+            )}" value="${escapeHtml(savedTags)}" />
+          </div>
           <div class="uwe-actions">
-            <button type="button" data-uwe-save>${escapeHtml(t("sidebar.save"))}</button>
-            <button type="button" data-uwe-ai ${
+            <button class="uwe-btn uwe-btn--primary" type="button" data-uwe-save>${escapeHtml(
+              t("sidebar.save")
+            )}</button>
+            <button class="uwe-btn uwe-btn--secondary" type="button" data-uwe-ai ${
               settings.api && settings.api.configured ? "" : "disabled"
             }>${escapeHtml(
               settings.api && settings.api.configured
                 ? t("sidebar.ai")
                 : t("sidebar.aiUnavailable")
             )}</button>
+            <div class="uwe-status" data-uwe-status role="status" aria-live="polite"></div>
           </div>
-          <div class="uwe-status" data-uwe-status role="status" aria-live="polite"></div>
           <div class="uwe-ai-result" data-uwe-ai-result hidden></div>
         </section>
       </div>
     `;
+  }
+
+  function scoreRing(value) {
+    const score = Math.max(0, Math.min(100, Number(value) || 0));
+    return `<svg class="uwe-score-ring__chart" viewBox="0 0 44 44" aria-hidden="true" focusable="false"><circle class="uwe-score-ring__track" cx="22" cy="22" r="19.5"/>${
+      score > 0
+        ? `<circle class="uwe-score-ring__arc" cx="22" cy="22" r="19.5" pathLength="100" stroke-dasharray="${score} 100"/>`
+        : ""
+    }</svg>`;
+  }
+
+  function reasonColumns(result) {
+    const pros = listSection(
+      t("sidebar.reasonsFor"),
+      result.positiveReasons.map(localize),
+      "for"
+    );
+    const cons = [
+      listSection(
+        t("sidebar.reasonsAgainst"),
+        result.negativeReasons.map(localize),
+        "against"
+      ),
+      listSection(t("sidebar.risks"), result.riskNotes.map(localize), "risk"),
+      listSection(
+        t("sidebar.missing"),
+        result.missingSignals.map(localize),
+        "missing"
+      )
+    ].join("");
+    const columns = [pros, cons]
+      .filter((column) => column.trim())
+      .map((column) => `<div class="uwe-reasons__col">${column}</div>`);
+    return columns.length
+      ? `<div class="uwe-reasons">${columns.join("")}</div>`
+      : "";
   }
 
   function proposalQuestionsSection(job, templates) {
@@ -998,9 +1140,10 @@
         <details class="uwe-question-details">
           <summary class="uwe-section-heading">
             <h3>${escapeHtml(t("sidebar.proposalQuestions"))}</h3>
-            <span>${escapeHtml(
+            <span class="uwe-count">${escapeHtml(
               t("sidebar.questionCount", { count: questions.length })
             )}</span>
+            ${icon("chevron")}
             <p class="uwe-question-collapsed-hint">${escapeHtml(
               t("sidebar.questionCollapsedHint")
             )}</p>
@@ -1013,7 +1156,9 @@
               .join("")}
           </div>
           <details class="uwe-template-manager">
-            <summary>${escapeHtml(t("sidebar.manageQuestionTemplates"))}</summary>
+            <summary>${escapeHtml(t("sidebar.manageQuestionTemplates"))}${icon(
+              "chevron"
+            )}</summary>
             <div class="uwe-template-create">
               <input
                 type="text"
@@ -1026,7 +1171,7 @@
                 aria-label="${escapeHtml(t("sidebar.templateAnswerPlaceholder"))}"
                 placeholder="${escapeHtml(t("sidebar.templateAnswerPlaceholder"))}"
               ></textarea>
-              <button type="button" data-uwe-template-create>${escapeHtml(
+              <button class="uwe-btn uwe-btn--quiet" type="button" data-uwe-template-create>${escapeHtml(
                 t("sidebar.addTemplate")
               )}</button>
             </div>
@@ -1067,14 +1212,15 @@
         >${escapeHtml(answer)}</textarea>
         <div class="uwe-question-actions">
           <button
+            class="uwe-btn uwe-btn--quiet"
             type="button"
             data-uwe-ai-answer
             ${settings.api && settings.api.configured ? "" : "disabled"}
           >${escapeHtml(t("sidebar.aiAnswer"))}</button>
-          <button type="button" data-uwe-copy-answer>${escapeHtml(
+          <button class="uwe-btn uwe-btn--quiet" type="button" data-uwe-copy-answer>${escapeHtml(
             t("sidebar.copyAnswer")
           )}</button>
-          <button type="button" data-uwe-save-question-template>${escapeHtml(
+          <button class="uwe-btn uwe-btn--quiet" type="button" data-uwe-save-question-template>${escapeHtml(
             template ? t("sidebar.updateTemplate") : t("sidebar.saveTemplate")
           )}</button>
         </div>
@@ -1098,10 +1244,10 @@
         )}">${escapeHtml(template.answer)}</textarea>
         <div class="uwe-template-item__actions">
           <span>${escapeHtml(templateUpdatedLabel(template))}</span>
-          <button type="button" data-uwe-template-update>${escapeHtml(
+          <button class="uwe-btn uwe-btn--quiet" type="button" data-uwe-template-update>${escapeHtml(
             t("sidebar.updateTemplate")
           )}</button>
-          <button type="button" data-uwe-template-delete>${escapeHtml(
+          <button class="uwe-btn uwe-btn--quiet uwe-btn--danger" type="button" data-uwe-template-delete>${escapeHtml(
             t("sidebar.deleteTemplate")
           )}</button>
         </div>
@@ -1118,25 +1264,39 @@
     });
   }
 
-  function scoreRow(label, value, helpText) {
+  function scoreRow(label, value, helpText, tone, note) {
     const width = Math.max(0, Math.min(100, Number(value) || 0));
     return `
-      <div class="uwe-breakdown__row uwe-score-help" tabindex="0" role="button">
-        <span>${escapeHtml(label)}</span>
+      <div class="uwe-breakdown__row uwe-tone--${tone} uwe-score-help" tabindex="0" role="button">
+        <span class="uwe-breakdown__label">${escapeHtml(label)}</span>
+        <span class="uwe-breakdown__figure"><strong>${width}</strong>${
+          note ? `<em>${escapeHtml(note)}</em>` : ""
+        }</span>
         <div class="uwe-meter"><span style="width: ${width}%"></span></div>
-        <strong>${width}</strong>
         ${scoreTip(helpText)}
       </div>
     `;
   }
 
-  function listSection(title, items) {
+  const REASON_ICONS = {
+    for: "check",
+    against: "minus",
+    risk: "alert",
+    missing: "question"
+  };
+
+  function listSection(title, items, kind) {
     if (!items.length) return "";
     return `
-      <section class="uwe-section">
+      <section class="uwe-section uwe-section--${kind}">
         <h3>${escapeHtml(title)}</h3>
         <ul class="uwe-list">
-          ${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          ${items
+            .map(
+              (item) =>
+                `<li>${icon(REASON_ICONS[kind])}<span>${escapeHtml(item)}</span></li>`
+            )
+            .join("")}
         </ul>
       </section>
     `;
@@ -1144,7 +1304,7 @@
 
   function decisionButton(action, selectedAction) {
     return `
-      <button type="button" data-uwe-decision="${action}" aria-pressed="${
+      <button class="uwe-choice uwe-choice--${action}" type="button" data-uwe-decision="${action}" aria-pressed="${
         action === selectedAction ? "true" : "false"
       }" aria-label="${escapeHtml(
         t("sidebar.selectAction", { action: t(`action.${action}`) })
@@ -1257,7 +1417,8 @@
     const button = sidebar && sidebar.querySelector("[data-uwe-toggle]");
     if (!button) return;
     const collapsed = sidebar.classList.contains("uwe-sidebar--collapsed");
-    button.textContent = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
+    const label = button.querySelector("[data-uwe-toggle-label]") || button;
+    label.textContent = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
     button.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
 
@@ -1893,7 +2054,36 @@
     return touched.length > 0 && touched.every(isExtensionElement);
   }
 
+  // Tips open under their trigger; nudge them left when they would spill
+  // past the panel or the viewport.
+  function positionScoreTip(trigger) {
+    const tip = trigger.querySelector(":scope > .uwe-score-tip");
+    const panel = trigger.closest(".uwe-sidebar, .uwe-card-panel");
+    if (!tip || !panel) return;
+    // The strip only hugs its content; let its tips use the job card's width.
+    const host =
+      (panel.classList.contains("uwe-card-panel") && panel.parentElement) || panel;
+    tip.style.setProperty("--uwe-tip-shift", "0px");
+    const tipRect = tip.getBoundingClientRect();
+    if (!tipRect.width) return;
+    const hostRect = host.getBoundingClientRect();
+    const overflow = tipRect.right - Math.min(hostRect.right, window.innerWidth - 8);
+    if (overflow <= 0) return;
+    const room = Math.max(0, tipRect.left - hostRect.left);
+    tip.style.setProperty(
+      "--uwe-tip-shift",
+      `${-Math.round(Math.min(overflow, room))}px`
+    );
+  }
+
   function bindScoreHelpEvents() {
+    ["mouseover", "focusin"].forEach((type) => {
+      document.addEventListener(type, (event) => {
+        const trigger = event.target.closest && event.target.closest(".uwe-score-help");
+        if (trigger) positionScoreTip(trigger);
+      });
+    });
+
     document.addEventListener("click", (event) => {
       const trigger = event.target.closest && event.target.closest(".uwe-score-help");
       document.querySelectorAll(".uwe-score-help.is-open").forEach((element) => {
@@ -1901,6 +2091,7 @@
       });
       if (!trigger) return;
       trigger.classList.toggle("is-open");
+      positionScoreTip(trigger);
     });
 
     document.addEventListener("keydown", (event) => {
