@@ -3,6 +3,13 @@ import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
 const root = process.cwd();
+const args = process.argv.slice(2);
+assert(
+  args.length === 0 ||
+    (args.length === 2 && args[0] === "--browser" && ["chrome", "safari"].includes(args[1])),
+  "Usage: node scripts/package-extension.mjs [--browser chrome|safari]"
+);
+const browser = args[1] || "chrome";
 const manifestPath = resolve(root, "manifest.json");
 const packagePath = resolve(root, "package.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -28,9 +35,10 @@ if (tagName) {
 
 const extensionName = packageJson.name || "extension";
 const version = manifest.version;
-const outputDir = resolve(root, "dist", "chrome");
+const outputDir = resolve(root, "dist", browser);
 const stagingDir = resolve(outputDir, "extension");
-const zipPath = resolve(outputDir, `${extensionName}-v${version}.zip`);
+const suffix = browser === "safari" ? "-safari-webextension" : "";
+const zipPath = resolve(outputDir, `${extensionName}${suffix}-v${version}.zip`);
 
 await rm(stagingDir, { recursive: true, force: true });
 await mkdir(stagingDir, { recursive: true });

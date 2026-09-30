@@ -1,5 +1,18 @@
 # Chrome Web Store Release Checklist
 
+## Prepared update: 0.1.21 (2026-09-30)
+
+- Upload package: `dist/chrome/upwork-enhancer-v0.1.21.zip` (generated locally; not submitted).
+- Refreshed screenshots from Chrome with the installed extension reporting `0.1.21`:
+  - `assets/store/screenshots/01-real-job-list.png`
+  - `assets/store/screenshots/02-real-opportunity-review.png`
+  - `assets/store/screenshots/03-real-settings.png`
+- All three screenshots are `1280×800`, RGB PNG without transparency. They show real job cards, the expanded review, and scoring settings. Browser chrome and personal account areas were cropped out.
+- Package validation: 52 tests passed, 7 optional browser-fixture tests skipped, 0 failures. Real list/detail/settings rendering was observed during screenshot capture; this was not a complete runtime regression pass.
+- In the existing Chrome Web Store listing, compare the published version, upload the newer package, replace the old screenshots, review the existing small promotional image, and submit the update. The dashboard's current version and submission state have not been checked in this preparation.
+
+Safari uses a separate [App Store release plan](APP_STORE_RELEASE.md).
+
 ## Before The First Upload
 
 - Register and set up a Chrome Web Store developer account.

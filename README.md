@@ -1,6 +1,6 @@
 # Upwork Enhancer
 
-Upwork Enhancer is a Manifest V3 Chrome extension that helps freelancers evaluate Upwork opportunities while browsing Upwork.
+Upwork Enhancer is a Manifest V3 browser extension that helps freelancers evaluate Upwork opportunities while browsing Upwork. The same extension source is packaged for Chrome and for macOS Safari.
 
 It adds local scoring badges to job cards, shows an opportunity review panel on job detail pages, and optionally uses a user-configured OpenAI-compatible API for additional analysis.
 
@@ -33,7 +33,9 @@ When optional AI is enabled, visible job context may be sent to the API endpoint
 
 ## Install For Local Testing
 
-This repository is currently a no-build extension.
+### Chrome / Chromium
+
+The web extension itself has no build step.
 
 1. Download or clone this repository.
 2. Open `chrome://extensions`.
@@ -44,12 +46,25 @@ This repository is currently a no-build extension.
 
 The latest packaged zip is available on the [GitHub Releases page](https://github.com/dreaifekks/upwork-enhancer/releases).
 
+### macOS Safari
+
+With Node.js and full Xcode installed:
+
+```bash
+npm run safari:run
+```
+
+This validates the extension, generates its Xcode container, builds a local macOS app, and opens it. Enable the extension in Safari and allow access to Upwork to use it. Without a configured signing identity or team, the build uses ad-hoc signing and Safari needs **Allow unsigned extensions**. You can instead use your Apple development team or an existing Developer ID Application identity.
+
+See [Safari setup and verification](docs/SAFARI.md) for signing, temporary loading, generated paths, and the browser QA checklist. A successful app build alone does not verify the extension inside Safari.
+
 ## Development
 
 Requirements:
 
 - Node.js 20 or newer
 - Chrome or Chromium for manual extension testing
+- macOS and full Xcode for the Safari app (command-line tools alone are insufficient)
 - ImageMagick for preparing store screenshots
 
 Useful commands:
@@ -57,6 +72,10 @@ Useful commands:
 ```bash
 npm run check
 npm run package:extension
+npm run package:safari
+npm run safari:project
+npm run safari:build
+npm run safari:run
 npm run screenshots:store
 ```
 
@@ -65,6 +84,8 @@ npm run screenshots:store
 ```text
 dist/chrome/
 ```
+
+`npm run package:safari` creates the shared web extension folder and a zip under `dist/safari/`. The zip is suitable for temporary loading in recent Safari versions; it is not a signed macOS app or an App Store submission. `npm run safari:project` creates the native Xcode project under `build/safari/`, and `npm run safari:build` builds that app. These generated files are excluded from Git.
 
 `npm run screenshots:store` converts real raw screenshots from:
 
@@ -95,6 +116,8 @@ Before publishing a release, verify:
 - [Product goals](docs/PRODUCT_GOALS.md)
 - [MVP requirements and build plan](docs/MVP_REQUIREMENTS.md)
 - [Chrome Web Store release checklist](docs/CHROME_WEB_STORE_RELEASE.md)
+- [Safari setup and verification](docs/SAFARI.md)
+- [Safari App Store release plan and listing draft](docs/APP_STORE_RELEASE.md)
 - [Privacy policy](docs/PRIVACY_POLICY.md)
 
 ## License

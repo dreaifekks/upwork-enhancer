@@ -6,6 +6,9 @@ build/
 .env.*
 *.log
 tests/artifacts/
+xcuserdata/
+*.xcuserstate
+.safari.local.json
 
 # Local audit and implementation working files
 audit/

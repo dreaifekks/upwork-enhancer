@@ -36,6 +36,6 @@ The extension uses browser extension APIs and HTTPS API endpoints configured by 
 
 ## Contact
 
-For questions about this privacy policy, use the support link provided in the Chrome Web Store listing or open an issue at:
+For questions about this privacy policy, use the support link provided in the extension's store listing or open an issue at:
 
 https://github.com/dreaifekks/upwork-enhancer/issues
