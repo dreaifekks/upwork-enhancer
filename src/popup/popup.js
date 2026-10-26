@@ -384,7 +384,6 @@
   async function requestApiPermission(next) {
     if (
       !next.api ||
-      !next.api.enabled ||
       !next.api.baseUrl ||
       typeof chrome === "undefined" ||
       !chrome.permissions

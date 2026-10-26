@@ -497,35 +497,25 @@ test("AI_ANALYZE_STREAM streams markdown chunks back to the sender tab", async (
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].stream, true);
   assert.equal(fetchCalls[0].model, "demo-model");
-  assert.equal(fetchCalls[0].max_tokens, 2200);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(streamMessages.map((item) => item.message))),
-    [
-      {
-        type: "AI_ANALYZE_STREAM_EVENT",
-        requestId: "request-1",
-        delta: "## Fit\n"
-      },
-      {
-        type: "AI_ANALYZE_STREAM_EVENT",
-        requestId: "request-1",
-        delta: "Good match."
-      },
-      {
-        type: "AI_ANALYZE_STREAM_EVENT",
-        requestId: "request-1",
-        text: "## Fit\nGood match.",
-        done: true
-      }
-    ]
+  assert.equal(fetchCalls[0].max_tokens, 8192);
+  const messages = JSON.parse(JSON.stringify(streamMessages.map((item) => item.message)));
+  assert.equal(
+    messages.filter((item) => item.delta).map((item) => item.delta).join(""),
+    "## Fit\nGood match."
   );
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(streamMessages.map((item) => [item.tabId, item.options]))),
-    [
-      [42, { frameId: 7 }],
-      [42, { frameId: 7 }],
-      [42, { frameId: 7 }]
-    ]
+  assert.ok(messages.every((item) => item.type === "AI_ANALYZE_STREAM_EVENT"));
+  assert.ok(messages.every((item) => item.requestId === "request-1"));
+  assert.deepEqual(messages.at(-1), {
+    type: "AI_ANALYZE_STREAM_EVENT",
+    requestId: "request-1",
+    text: "## Fit\nGood match.",
+    truncated: false,
+    done: true
+  });
+  assert.ok(
+    streamMessages.every(
+      (item) => item.tabId === 42 && JSON.stringify(item.options) === '{"frameId":7}'
+    )
   );
 });
 
@@ -594,6 +584,332 @@ test("AI_ANALYZE_STREAM does not append a retry after partial output", async () 
   assert.match(streamMessages.at(-1).error, /after partial output/i);
 });
 
+test("AI_ANALYZE_STREAM continues when the model stops at the output limit", async () => {
+  const fetchCalls = [];
+  const streamMessages = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      fetchCalls.push(JSON.parse(options.body));
+      if (fetchCalls.length === 1) {
+        return streamResponse([
+          'data: {"choices":[{"delta":{"content":"First half, "}}]}\n\n',
+          'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+          "data: [DONE]\n\n"
+        ]);
+      }
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"second half."}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+        "data: [DONE]\n\n"
+      ]);
+    },
+    tabSendMessageImpl: async (_tabId, message) => {
+      streamMessages.push(message);
+      return null;
+    }
+  });
+
+  const response = await worker.send(
+    {
+      type: "AI_ANALYZE_STREAM",
+      requestId: "request-long",
+      job: { title: "Long job" },
+      score: { overallScore: 70 }
+    },
+    {
+      tab: { id: 5, url: "https://www.upwork.com/jobs/~01" },
+      url: "https://www.upwork.com/jobs/~01"
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.text, "First half, second half.");
+  assert.equal(response.truncated, false);
+  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls[1].messages.at(-2).role, "assistant");
+  assert.equal(fetchCalls[1].messages.at(-2).content, "First half, ");
+  assert.match(fetchCalls[1].messages.at(-1).content, /Continue exactly/);
+  assert.equal(
+    streamMessages.filter((item) => item.delta).map((item) => item.delta).join(""),
+    "First half, second half."
+  );
+  assert.equal(streamMessages.at(-1).done, true);
+});
+
+test("AI requests switch to max_completion_tokens when the provider asks for it", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "reasoning-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      fetchCalls.push(body);
+      if ("max_tokens" in body) {
+        return {
+          ok: false,
+          status: 400,
+          async text() {
+            return "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.";
+          }
+        };
+      }
+      if ("temperature" in body) {
+        return {
+          ok: false,
+          status: 400,
+          async text() {
+            return "Unsupported value: 'temperature' does not support 0.3 with this model.";
+          }
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return { choices: [{ message: { content: "Done" }, finish_reason: "stop" }] };
+        }
+      };
+    }
+  });
+
+  const first = await worker.send({
+    type: "AI_ANALYZE",
+    job: { title: "Job" },
+    score: { overallScore: 60 }
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.text, "Done");
+  assert.equal(fetchCalls.length, 3);
+  assert.equal(fetchCalls[2].max_completion_tokens, 8192);
+  assert.equal("temperature" in fetchCalls[2], false);
+
+  await worker.send({ type: "AI_ANALYZE", job: { title: "Job" }, score: {} });
+  assert.equal(fetchCalls.length, 4, "the working variant is remembered");
+});
+
+test("TEST_AI_CONFIG streams like real analysis and accepts unsaved form values", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: false,
+          baseUrl: "https://old.example.com/v1",
+          model: "old-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async (url, options) => {
+      fetchCalls.push({ url, authorization: options.headers.authorization, body: JSON.parse(options.body) });
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+        "data: [DONE]\n\n"
+      ]);
+    }
+  });
+
+  const response = await worker.send({
+    type: "TEST_AI_CONFIG",
+    api: { baseUrl: "https://new.example.com/v1/chat/completions", model: "new-model", apiKey: "" }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.text, "OK");
+  assert.equal(fetchCalls[0].url, "https://new.example.com/v1/chat/completions");
+  assert.equal(fetchCalls[0].authorization, `${AUTH_SCHEME} ${TEST_API_KEY}`);
+  assert.equal(fetchCalls[0].body.model, "new-model");
+  assert.equal(fetchCalls[0].body.stream, true);
+});
+
+test("TEST_AI_CONFIG reports HTTP errors instead of throwing", async () => {
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      async text() {
+        return "invalid api key";
+      }
+    })
+  });
+
+  const response = await worker.send({ type: "TEST_AI_CONFIG" });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /401 invalid api key/);
+});
+
+test("FETCH_AI_MODELS lists model ids from the models endpoint", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1/",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async (url, options) => {
+      fetchCalls.push({ url, method: options.method, authorization: options.headers.authorization });
+      return {
+        ok: true,
+        async json() {
+          return { data: [{ id: "gpt-b" }, { id: "gpt-a" }, { id: "gpt-b" }] };
+        }
+      };
+    }
+  });
+
+  const response = await worker.send({ type: "FETCH_AI_MODELS" });
+  assert.equal(response.ok, true);
+  assert.deepEqual(Array.from(response.models), ["gpt-a", "gpt-b"]);
+  assert.equal(fetchCalls[0].url, "https://api.example.com/v1/models");
+  assert.equal(fetchCalls[0].method, "GET");
+  assert.equal(fetchCalls[0].authorization, `${AUTH_SCHEME} ${TEST_API_KEY}`);
+});
+
+test("content senders cannot fetch models or test AI with the stored key", async () => {
+  const worker = createServiceWorker();
+  const sender = {
+    tab: { id: 1, url: "https://www.upwork.com/jobs/~01" },
+    url: "https://www.upwork.com/jobs/~01"
+  };
+  for (const type of ["FETCH_AI_MODELS", "TEST_AI_CONFIG"]) {
+    const response = await worker.send({ type }, sender);
+    assert.equal(response.ok, false);
+    assert.match(response.error, /not available to page content/);
+  }
+});
+
+test("feed filters are stored for the Upwork content script", async () => {
+  const worker = createServiceWorker();
+  const sender = {
+    tab: { id: 3, url: "https://www.upwork.com/nx/find-work/best-matches" },
+    url: "https://www.upwork.com/nx/find-work/best-matches"
+  };
+
+  const saved = await worker.send(
+    {
+      type: "SAVE_FEED_FILTERS",
+      filters: {
+        checked: ["clientInfo::Payment verified", "clientInfo::Payment verified", ""],
+        inputs: { "fixed-price-min-input": 100, "bad id!": "x", empty: "" }
+      }
+    },
+    sender
+  );
+  assert.equal(saved.ok, true);
+
+  const loaded = await worker.send({ type: "GET_FEED_FILTERS" }, sender);
+  assert.equal(loaded.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(loaded.filters)), {
+    checked: ["clientInfo::Payment verified"],
+    inputs: { "fixed-price-min-input": "100", badid: "x" }
+  });
+});
+
+test("the options page opened in a tab can test AI", async () => {
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"OK"}}]}\n\n', "data: [DONE]\n\n"])
+  });
+  const optionsUrl = "chrome-extension://upwork-enhancer-test/src/options/options.html";
+  const response = await worker.send(
+    { type: "TEST_AI_CONFIG" },
+    { id: "upwork-enhancer-test", url: optionsUrl, tab: { id: 9, url: optionsUrl } }
+  );
+  assert.equal(response.ok, true);
+
+  const spoofed = await worker.send(
+    { type: "TEST_AI_CONFIG" },
+    {
+      id: "upwork-enhancer-test",
+      url: "chrome-extension://another-extension/page.html",
+      tab: { id: 9, url: "chrome-extension://another-extension/page.html" }
+    }
+  );
+  assert.equal(spoofed.ok, false);
+});
+
+test("AI prompt carries boosted bids and extra job signals", async () => {
+  const fetchCalls = [];
+  const worker = createServiceWorker({
+    initialStore: {
+      uwe_settings_v1: {
+        api: {
+          enabled: true,
+          baseUrl: "https://api.example.com/v1",
+          model: "demo-model",
+          [API_KEY_FIELD]: TEST_API_KEY
+        }
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      fetchCalls.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        async json() {
+          return { choices: [{ message: { content: "ok" }, finish_reason: "stop" }] };
+        }
+      };
+    }
+  });
+  await worker.send({
+    type: "AI_ANALYZE",
+    job: {
+      title: "Job",
+      interviewCount: 3,
+      postedAge: "2 hours ago",
+      boostedBids: { status: "ok", topBoostedBids: [135, 120, "97", 90, 80], boostedProposalsInTop: 4 }
+    },
+    score: {}
+  });
+  const prompt = fetchCalls[0].messages[1].content;
+  assert.match(prompt, /"topBoostedBids": \[\s*135,\s*120,\s*97,\s*90\s*\]/);
+  assert.match(prompt, /"interviewCount": 3/);
+  assert.match(prompt, /"postedAge": "2 hours ago"/);
+  assert.match(prompt, /whether boosting is worth it/);
+});
+
 function streamResponse(chunks) {
   const encoder = new TextEncoder();
   return {
@@ -646,6 +962,9 @@ function createServiceWorker({
       },
       runtime: {
         id: "upwork-enhancer-test",
+        getURL(path = "") {
+          return `chrome-extension://upwork-enhancer-test/${String(path).replace(/^\//, "")}`;
+        },
         onMessage: {
           addListener(listener) {
             messageListener = listener;

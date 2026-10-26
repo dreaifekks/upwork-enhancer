@@ -67,8 +67,8 @@
             </p>
           </div>
           <div class="settings-section__fields">
-            <label class="field">
-              <span data-i18n="options.preferredSkills">Preferred skills</span>
+            <div class="field">
+              <label for="preferredSkillsTagInput" data-i18n="options.preferredSkills">Preferred skills</label>
               <input type="hidden" name="preferredSkills" />
               <div class="tag-editor" data-tag-editor="preferredSkills">
                 <div class="tag-editor__tags" data-tag-list></div>
@@ -77,11 +77,12 @@
                   type="text"
                   autocomplete="off"
                   data-tag-input
+                  id="preferredSkillsTagInput"
                 />
               </div>
-            </label>
-            <label class="field">
-              <span data-i18n="options.projectTypes">Preferred project types</span>
+            </div>
+            <div class="field">
+              <label for="preferredProjectTypesTagInput" data-i18n="options.projectTypes">Preferred project types</label>
               <input type="hidden" name="preferredProjectTypes" />
               <div class="tag-editor" data-tag-editor="preferredProjectTypes">
                 <div class="tag-editor__tags" data-tag-list></div>
@@ -90,11 +91,12 @@
                   type="text"
                   autocomplete="off"
                   data-tag-input
+                  id="preferredProjectTypesTagInput"
                 />
               </div>
-            </label>
-            <label class="field">
-              <span data-i18n="options.avoidedSkills">Avoided skills or categories</span>
+            </div>
+            <div class="field">
+              <label for="avoidedSkillsTagInput" data-i18n="options.avoidedSkills">Avoided skills or categories</label>
               <input type="hidden" name="avoidedSkills" />
               <div class="tag-editor" data-tag-editor="avoidedSkills">
                 <div class="tag-editor__tags" data-tag-list></div>
@@ -103,9 +105,10 @@
                   type="text"
                   autocomplete="off"
                   data-tag-input
+                  id="avoidedSkillsTagInput"
                 />
               </div>
-            </label>
+            </div>
           </div>
         </section>
 
@@ -136,8 +139,8 @@
             </p>
           </div>
           <div class="settings-section__fields">
-            <label class="field">
-              <span data-i18n="options.blacklistedPhrases">Blacklisted phrases</span>
+            <div class="field">
+              <label for="blacklistedPhrasesTagInput" data-i18n="options.blacklistedPhrases">Blacklisted phrases</label>
               <input type="hidden" name="blacklistedPhrases" />
               <div class="tag-editor" data-tag-editor="blacklistedPhrases">
                 <div class="tag-editor__tags" data-tag-list></div>
@@ -146,11 +149,12 @@
                   type="text"
                   autocomplete="off"
                   data-tag-input
+                  id="blacklistedPhrasesTagInput"
                 />
               </div>
-            </label>
-            <label class="field">
-              <span data-i18n="options.offPlatformPhrases">Off-platform risk phrases</span>
+            </div>
+            <div class="field">
+              <label for="offPlatformPhrasesTagInput" data-i18n="options.offPlatformPhrases">Off-platform risk phrases</label>
               <input type="hidden" name="offPlatformPhrases" />
               <div class="tag-editor" data-tag-editor="offPlatformPhrases">
                 <div class="tag-editor__tags" data-tag-list></div>
@@ -159,9 +163,10 @@
                   type="text"
                   autocomplete="off"
                   data-tag-input
+                  id="offPlatformPhrasesTagInput"
                 />
               </div>
-            </label>
+            </div>
           </div>
         </section>
 
@@ -229,14 +234,29 @@
               <span data-i18n="options.aiEnabled">Enable AI actions</span>
             </label>
             <div class="settings-grid">
-              <label class="field">
+              <label class="field settings-grid__span">
                 <span data-i18n="options.apiBaseUrl">API base URL</span>
                 <input name="apiBaseUrl" type="url" placeholder="https://api.openai.com/v1" />
               </label>
-              <label class="field">
-                <span data-i18n="options.model">Model</span>
-                <input name="apiModel" type="text" />
-              </label>
+              <div class="field settings-grid__span">
+                <label for="apiModel" data-i18n="options.model">Model</label>
+                <div class="model-picker">
+                  <select id="apiModelSelect" hidden>
+                    <option value="" data-i18n="options.modelCustom">Custom model (type below)</option>
+                  </select>
+                  <div class="model-picker__row">
+                    <input id="apiModel" name="apiModel" type="text" autocomplete="off" spellcheck="false" />
+                    <button
+                      type="button"
+                      id="fetchModels"
+                      class="secondary-button"
+                      data-i18n="options.fetchModels"
+                    >
+                      Fetch models
+                    </button>
+                  </div>
+                </div>
+              </div>
               <label class="field settings-grid__span">
                 <span data-i18n="options.apiKey">API key</span>
                 <input name="apiKey" type="password" autocomplete="off" />
@@ -251,6 +271,7 @@
               >
                 Test AI connection
               </button>
+              <span id="aiStatus" class="inline-status" role="status" aria-live="polite"></span>
             </div>
           </div>
         </section>
@@ -260,6 +281,10 @@
             <h2 data-i18n="options.sectionAppearance">Appearance</h2>
           </div>
           <div class="settings-section__fields settings-grid">
+            <label class="check-field settings-grid__span">
+              <input name="showBoostBids" type="checkbox" />
+              <span data-i18n="options.showBoostBids">Show boosted bids on job cards</span>
+            </label>
             <label class="field">
               <span data-i18n="options.language">Display language</span>
               <select name="language" id="language">

@@ -8,9 +8,9 @@ Upwork Enhancer is a browser extension that helps freelancers evaluate visible U
 
 The extension may read visible Upwork page content, including job titles, job descriptions, skills, client signals, proposal counts, and related page text needed to score and display opportunity reviews.
 
-The extension stores settings and user preferences in browser storage, including preferred skills, avoided skills, scoring thresholds, imported profile details and summary, saved decisions, tags, notes, reusable proposal-question answer templates, and optional AI configuration.
+The extension stores settings and user preferences in browser storage, including preferred skills, avoided skills, scoring thresholds, imported profile details and summary, saved decisions, tags, notes, reusable proposal-question answer templates, the Find Work feed filters last applied, and optional AI configuration.
 
-If the optional AI feature is enabled and the user starts an AI action, the extension may send visible job information, scoring context, the user's profile summary and preferences, relevant reusable proposal-question answer templates, and the configured model name to the AI API endpoint configured by the user. The user's API key is stored locally in browser storage and is used only to call the configured API endpoint from the extension background service worker.
+If the optional AI feature is enabled and the user starts an AI action, the extension may send visible job information, scoring context, the user's profile summary and preferences, relevant reusable proposal-question answer templates, and the configured model name to the AI API endpoint configured by the user. When the user asks to fetch the model list, the extension requests that endpoint's model list with the configured API key. When boosted bids are enabled, the extension asks Upwork for the boosted bids of job cards visible on the page, using the user's existing Upwork session inside the page. That data comes from and stays with Upwork and the user's browser; it is not sent anywhere else. The user's API key is stored locally in browser storage and is used only to call the configured API endpoint from the extension background service worker.
 
 ## How Data Is Used
 

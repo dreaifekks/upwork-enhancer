@@ -8,6 +8,7 @@
   const DEFAULT_SETTINGS = {
     language: "en",
     theme: "auto",
+    showBoostBids: true,
     profileSummary: "",
     profileUrl: "",
     profileUpdatedAt: "",
@@ -205,6 +206,9 @@
       theme: ["auto", "light", "dark"].includes(source.theme)
         ? source.theme
         : defaults.theme,
+      showBoostBids: has("showBoostBids")
+        ? Boolean(source.showBoostBids)
+        : defaults.showBoostBids,
       profileSummary: String(source.profileSummary || ""),
       profileUrl: normalizeProfileUrl(source.profileUrl),
       profileUpdatedAt: String(source.profileUpdatedAt || ""),

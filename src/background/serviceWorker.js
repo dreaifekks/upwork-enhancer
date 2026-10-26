@@ -1,8 +1,23 @@
 importScripts("../shared/defaultSettings.js");
 
 const UWE = self.UpworkEnhancer;
-const AI_MAX_TOKENS = 2200;
-const AI_STREAM_TIMEOUT_MS = 90000;
+const AI_MAX_TOKENS = 8192;
+const AI_FALLBACK_MAX_TOKENS = 4096;
+const AI_TEST_MAX_TOKENS = 1024;
+const AI_MAX_CONTINUATIONS = 2;
+const AI_FIRST_BYTE_TIMEOUT_MS = 120000;
+const AI_IDLE_TIMEOUT_MS = 60000;
+const AI_REQUEST_TIMEOUT_MS = 180000;
+const AI_TEST_TIMEOUT_MS = 60000;
+const AI_MODELS_TIMEOUT_MS = 20000;
+const AI_STREAM_FLUSH_MS = 40;
+const AI_CONTINUE_PROMPT = [
+  "Your previous reply was cut off by the output limit.",
+  "Continue exactly where it stopped.",
+  "Do not repeat earlier text and do not add a preface."
+].join(" ");
+const aiCompatibility = new Map();
+const FEED_FILTERS_STORAGE_KEY = "uwe_feed_filters_v1";
 const QUESTION_TEMPLATE_LIMIT = 120;
 const QUESTION_TEMPLATE_QUESTION_LIMIT = 600;
 const QUESTION_TEMPLATE_ANSWER_LIMIT = 5000;
@@ -91,7 +106,18 @@ async function handleMessage(message, sender) {
       return await generateQuestionAnswer(message);
     }
     case "TEST_AI_CONFIG": {
-      return await testAiConfig();
+      return await testAiConfig(message);
+    }
+    case "GET_FEED_FILTERS": {
+      return { ok: true, filters: await loadFeedFilters() };
+    }
+    case "SAVE_FEED_FILTERS": {
+      const filters = sanitizeFeedFilters(message.filters);
+      await chrome.storage.local.set({ [FEED_FILTERS_STORAGE_KEY]: filters });
+      return { ok: true, filters };
+    }
+    case "FETCH_AI_MODELS": {
+      return await fetchAiModels(message);
     }
     default:
       return { ok: false, error: "Unknown message type" };
@@ -107,7 +133,9 @@ const CONTENT_MESSAGE_TYPES = new Set([
   "DELETE_QUESTION_TEMPLATE",
   "AI_ANALYZE",
   "AI_ANALYZE_STREAM",
-  "AI_GENERATE_QUESTION_ANSWER"
+  "AI_GENERATE_QUESTION_ANSWER",
+  "GET_FEED_FILTERS",
+  "SAVE_FEED_FILTERS"
 ]);
 
 function authorizeMessage(message, sender) {
@@ -120,6 +148,9 @@ function authorizeMessage(message, sender) {
     throw new Error("Unauthorized extension sender.");
   }
   if (!sender || !sender.tab) return;
+  // The options page opens in a normal tab, so it arrives with sender.tab
+  // set. Pages served from this extension are trusted extension contexts.
+  if (isExtensionPageUrl(sender.url)) return;
   const senderUrl = String(sender.url || sender.tab.url || "");
   let hostname = "";
   try {
@@ -133,6 +164,13 @@ function authorizeMessage(message, sender) {
   if (!CONTENT_MESSAGE_TYPES.has(message && message.type)) {
     throw new Error("Message type is not available to page content.");
   }
+}
+
+function isExtensionPageUrl(url) {
+  if (!chrome.runtime || typeof chrome.runtime.getURL !== "function") return false;
+  const base = String(chrome.runtime.getURL("") || "");
+  // getURL("") ends with "/", so a lookalike id cannot match as a prefix.
+  return /^[a-z-]+:\/\/[^/]+\/$/i.test(base) && String(url || "").startsWith(base);
 }
 
 async function saveSettings(input) {
@@ -297,6 +335,37 @@ async function profileImportCandidateTabs() {
   }
 
   return candidates;
+}
+
+async function loadFeedFilters() {
+  const stored = await chrome.storage.local.get(FEED_FILTERS_STORAGE_KEY);
+  return sanitizeFeedFilters(stored[FEED_FILTERS_STORAGE_KEY]);
+}
+
+function sanitizeFeedFilters(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const checked = Array.isArray(source.checked)
+    ? Array.from(
+        new Set(
+          source.checked
+            .map((item) => String(item || "").trim().slice(0, 160))
+            .filter(Boolean)
+        )
+      ).slice(0, 80)
+    : [];
+  const inputs = {};
+  if (source.inputs && typeof source.inputs === "object") {
+    Object.keys(source.inputs)
+      .slice(0, 20)
+      .forEach((key) => {
+        const id = String(key).replace(/[^\w-]/g, "").slice(0, 80);
+        const value = String(source.inputs[key] == null ? "" : source.inputs[key])
+          .trim()
+          .slice(0, 40);
+        if (id && value) inputs[id] = value;
+      });
+  }
+  return { checked, inputs };
 }
 
 async function loadDecisions() {
@@ -524,141 +593,339 @@ function cleanGeneratedQuestionAnswer(value) {
     .slice(0, QUESTION_TEMPLATE_ANSWER_LIMIT);
 }
 
+function aiSystemMessages(prompt) {
+  return [
+    { role: "system", content: AI_SYSTEM_PROMPT },
+    { role: "user", content: prompt }
+  ];
+}
+
 async function requestAiAnalysis(settings, prompt) {
-  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${settings.api.apiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.api.model,
-        temperature: 0.3,
-        max_tokens: AI_MAX_TOKENS,
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: AI_SYSTEM_PROMPT
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`${response.status} ${text.slice(0, 160)}`);
-    }
-
-    const payload = await response.json();
-    const text =
-      payload &&
-      payload.choices &&
-      payload.choices[0] &&
-      payload.choices[0].message &&
-      payload.choices[0].message.content;
-
-    return { ok: true, text: String(text || "").trim() };
-  } finally {
-    clearTimeout(timeout);
-  }
+  const result = await requestAiCompletion(settings, aiSystemMessages(prompt), {
+    stream: false,
+    timeoutMs: AI_REQUEST_TIMEOUT_MS
+  });
+  return { ok: true, text: result.text, truncated: result.truncated };
 }
 
 async function requestAiAnalysisStream(settings, prompt, sender, requestId) {
-  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_STREAM_TIMEOUT_MS);
-
-  let emittedText = false;
+  const relay = createDeltaRelay((delta) => sendAiStreamEvent(sender, requestId, { delta }));
+  let result;
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${settings.api.apiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.api.model,
-        temperature: 0.3,
-        max_tokens: AI_MAX_TOKENS,
-        stream: true,
-        messages: [
-          {
-            role: "system",
-            content: AI_SYSTEM_PROMPT
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      })
+    result = await requestAiCompletion(settings, aiSystemMessages(prompt), {
+      stream: true,
+      onDelta: (delta) => relay.push(delta)
     });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`${response.status} ${text.slice(0, 160)}`);
-    }
-
-    if (!response.body || !response.body.getReader) {
-      const payload = await response.json();
-      const text = extractAiText(payload);
-      await sendAiStreamEvent(sender, requestId, { text, done: true });
-      return { ok: true, text };
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let text = "";
-
-    const consumeRecord = async (record) => {
-      const deltas = parseSseRecord(record);
-      for (const delta of deltas) {
-        text += delta;
-        emittedText = true;
-        await sendAiStreamEvent(sender, requestId, { delta });
-      }
-    };
-
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const records = buffer.split(/(?:\r?\n){2}/);
-      buffer = records.pop() || "";
-      for (const record of records) {
-        await consumeRecord(record);
-      }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      await consumeRecord(buffer);
-    }
-
-    text = text.trim();
-    await sendAiStreamEvent(sender, requestId, { text, done: true });
-    return { ok: true, text };
-  } catch (error) {
-    if (error && typeof error === "object") {
-      error.aiStreamEmitted = emittedText;
-    }
-    throw error;
   } finally {
-    clearTimeout(timeout);
+    await relay.flush();
   }
+  await sendAiStreamEvent(sender, requestId, {
+    text: result.text,
+    truncated: result.truncated,
+    done: true
+  });
+  return { ok: true, text: result.text, truncated: result.truncated };
+}
+
+// Tokens can arrive faster than the tab can take messages. Batch them into
+// one message per short interval so the stream never waits on the tab.
+function createDeltaRelay(send, intervalMs = AI_STREAM_FLUSH_MS) {
+  let buffer = "";
+  let timer = null;
+  let chain = Promise.resolve();
+
+  function flushNow() {
+    clearTimeout(timer);
+    timer = null;
+    if (!buffer) return chain;
+    const delta = buffer;
+    buffer = "";
+    chain = chain.then(() => send(delta)).catch(() => null);
+    return chain;
+  }
+
+  return {
+    push(delta) {
+      buffer += delta;
+      if (!timer) timer = setTimeout(flushNow, intervalMs);
+    },
+    flush: flushNow
+  };
+}
+
+// Runs a chat completion and keeps asking the model to continue while it
+// stops because of the output token limit, so long answers are not cut off.
+async function requestAiCompletion(settings, messages, options = {}) {
+  const maxContinuations =
+    typeof options.maxContinuations === "number"
+      ? options.maxContinuations
+      : AI_MAX_CONTINUATIONS;
+  let conversation = messages.slice();
+  let text = "";
+  let emitted = false;
+  let finishReason = "";
+
+  for (let round = 0; round <= maxContinuations; round += 1) {
+    let roundText = "";
+    try {
+      const result = await requestAiCompletionOnce(settings, conversation, {
+        ...options,
+        onDelta: async (delta) => {
+          roundText += delta;
+          emitted = true;
+          if (options.onDelta) await options.onDelta(delta);
+        }
+      });
+      if (!roundText && result.text) {
+        roundText = result.text;
+        if (options.onDelta && options.stream) {
+          emitted = true;
+          await options.onDelta(result.text);
+        }
+      }
+      finishReason = result.finishReason;
+    } catch (error) {
+      if (error && typeof error === "object") {
+        error.aiStreamEmitted = emitted || Boolean(error.aiStreamEmitted);
+        error.aiPartialText = text + roundText;
+      }
+      throw error;
+    }
+
+    text += roundText;
+    if (finishReason !== "length" || !roundText.trim()) break;
+    conversation = messages.concat([
+      { role: "assistant", content: text },
+      { role: "user", content: AI_CONTINUE_PROMPT }
+    ]);
+  }
+
+  return { text: text.trim(), finishReason, truncated: finishReason === "length" };
+}
+
+async function requestAiCompletionOnce(settings, messages, options = {}) {
+  const compat = aiCompatibilityFor(settings);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const body = buildChatBody(settings, messages, options, compat);
+    const controller = new AbortController();
+    let timer = null;
+    const arm = (ms) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), ms);
+    };
+    arm(options.timeoutMs || AI_FIRST_BYTE_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(aiEndpoint(settings, "/chat/completions"), {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          accept: body.stream ? "text/event-stream, application/json" : "application/json",
+          authorization: `Bearer ${settings.api.apiKey}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const errorText = await safeResponseText(response);
+        if (adaptAiCompatibility(compat, response.status, errorText, body)) {
+          lastError = new Error(`${response.status} ${errorText.slice(0, 240)}`);
+          continue;
+        }
+        throw new Error(`${response.status} ${errorText.slice(0, 240)}`);
+      }
+
+      if (!body.stream || !isStreamingResponse(response)) {
+        const payload = await response.json();
+        throwIfPayloadError(payload);
+        return {
+          text: extractAiText(payload),
+          finishReason: finishReasonFromPayload(payload)
+        };
+      }
+
+      if (!options.timeoutMs) arm(AI_IDLE_TIMEOUT_MS);
+      return await readAiStream(response, {
+        onDelta: options.onDelta,
+        onActivity: () => {
+          if (!options.timeoutMs) arm(AI_IDLE_TIMEOUT_MS);
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw lastError || new Error("AI request failed");
+}
+
+async function readAiStream(response, { onDelta, onActivity }) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  let finishReason = "";
+
+  const consumeRecord = async (record) => {
+    const meta = sseRecordMeta(record);
+    if (meta.error) throw new Error(meta.error);
+    if (meta.finishReason) finishReason = meta.finishReason;
+    for (const delta of parseSseRecord(record)) {
+      text += delta;
+      if (onDelta) await onDelta(delta);
+    }
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (onActivity) onActivity();
+    buffer += decoder.decode(value, { stream: true });
+    const records = buffer.split(/(?:\r?\n){2}/);
+    buffer = records.pop() || "";
+    for (const record of records) {
+      await consumeRecord(record);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    await consumeRecord(buffer);
+  }
+  return { text, finishReason };
+}
+
+function buildChatBody(settings, messages, options, compat) {
+  const body = {
+    model: settings.api.model,
+    messages,
+    stream: typeof compat.stream === "boolean" ? compat.stream : Boolean(options.stream)
+  };
+  const temperature =
+    typeof options.temperature === "number" ? options.temperature : 0.3;
+  if (!compat.omitTemperature) body.temperature = temperature;
+  const requestedTokens = options.maxTokens || AI_MAX_TOKENS;
+  const maxTokens = compat.maxTokens
+    ? Math.min(requestedTokens, compat.maxTokens)
+    : requestedTokens;
+  if (compat.tokenParam !== "none") {
+    body[compat.tokenParam || "max_tokens"] = maxTokens;
+  }
+  return body;
+}
+
+// OpenAI-compatible providers disagree on a few request fields. When a
+// provider rejects one, remember the working variant for this base URL and
+// model so later requests skip the failed attempt.
+function adaptAiCompatibility(compat, status, errorText, body) {
+  if (![400, 404, 415, 422].includes(Number(status))) return false;
+  const text = String(errorText || "").toLowerCase();
+  if (
+    /max_completion_tokens/.test(text) &&
+    compat.tokenParam !== "max_completion_tokens" &&
+    compat.tokenParam !== "none"
+  ) {
+    compat.tokenParam = "max_completion_tokens";
+    return true;
+  }
+  if (/max_tokens|max_completion_tokens|max_output_tokens|maximum .*tokens|tokens? .*(limit|exceed|too large|range|at most|less than)/.test(text)) {
+    if (!compat.maxTokens || compat.maxTokens > AI_FALLBACK_MAX_TOKENS) {
+      compat.maxTokens = AI_FALLBACK_MAX_TOKENS;
+      return true;
+    }
+    if (compat.tokenParam !== "none") {
+      compat.tokenParam = "none";
+      return true;
+    }
+  }
+  if (/temperature/.test(text) && !compat.omitTemperature) {
+    compat.omitTemperature = true;
+    return true;
+  }
+  if (
+    /\bstream(ing)?\b/.test(text) &&
+    /(must|only|not supported|unsupported|required|invalid|true|false|enable|disable)/.test(text) &&
+    typeof compat.stream !== "boolean"
+  ) {
+    compat.stream = !body.stream;
+    return true;
+  }
+  return false;
+}
+
+function aiCompatibilityFor(settings) {
+  const key = `${aiBaseUrl(settings)}|${settings.api.model}`;
+  if (!aiCompatibility.has(key)) aiCompatibility.set(key, {});
+  return aiCompatibility.get(key);
+}
+
+function aiBaseUrl(settings) {
+  return String((settings && settings.api && settings.api.baseUrl) || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/(chat\/completions|completions|models)$/i, "");
+}
+
+function aiEndpoint(settings, path) {
+  return `${aiBaseUrl(settings)}${path}`;
+}
+
+function isStreamingResponse(response) {
+  if (!response.body || !response.body.getReader) return false;
+  const contentType =
+    response.headers && typeof response.headers.get === "function"
+      ? String(response.headers.get("content-type") || "")
+      : "";
+  return !/application\/json/i.test(contentType);
+}
+
+async function safeResponseText(response) {
+  try {
+    return String((await response.text()) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function throwIfPayloadError(payload) {
+  const message = payloadErrorMessage(payload);
+  if (message) throw new Error(message);
+}
+
+function payloadErrorMessage(payload) {
+  if (!payload || typeof payload !== "object" || !payload.error) return "";
+  const error = payload.error;
+  if (typeof error === "string") return error;
+  return String(error.message || error.code || JSON.stringify(error)).slice(0, 240);
+}
+
+function finishReasonFromPayload(payload) {
+  const choice = payload && payload.choices && payload.choices[0];
+  return String((choice && choice.finish_reason) || "");
+}
+
+function sseRecordMeta(record) {
+  const meta = { finishReason: "", error: "" };
+  String(record || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^data:\s*/i, "").trim())
+    .filter((line) => line[0] === "{")
+    .forEach((line) => {
+      const payload = parseJson(line);
+      if (!payload) return;
+      const error = payloadErrorMessage(payload);
+      if (error) meta.error = error;
+      const finishReason = finishReasonFromPayload(payload);
+      if (finishReason) meta.finishReason = finishReason;
+    });
+  if (!meta.finishReason) {
+    const match = String(record || "").match(/"finish_reason"\s*:\s*"([a-z_]+)"/i);
+    if (match) meta.finishReason = match[1];
+  }
+  return meta;
 }
 
 function extractAiText(payload) {
@@ -782,61 +1049,106 @@ async function sendAiStreamEvent(sender, requestId, event) {
   }
 }
 
-async function testAiConfig() {
+// Extension pages may pass the unsaved form values so the connection can be
+// checked before saving. An empty key falls back to the stored one.
+async function aiSettingsForCheck(message) {
   const settings = await loadSettings();
-  if (!isAiConfigured(settings)) {
-    return { ok: false, error: "AI is not configured" };
+  const draft = message && message.api && typeof message.api === "object" ? message.api : null;
+  if (!draft) return settings;
+  return {
+    ...settings,
+    api: {
+      ...settings.api,
+      baseUrl: String(draft.baseUrl || settings.api.baseUrl || "").trim(),
+      model: String(draft.model || settings.api.model || "").trim(),
+      apiKey: String(draft.apiKey || settings.api.apiKey || "")
+    }
+  };
+}
+
+async function testAiConfig(message) {
+  const settings = await aiSettingsForCheck(message);
+  if (!settings.api.baseUrl || !settings.api.model || !settings.api.apiKey) {
+    return { ok: false, error: "AI is not configured: base URL, model, and API key are required" };
   }
 
-  const endpoint = `${settings.api.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${settings.api.apiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.api.model,
-        temperature: 0,
-        messages: [
-          {
-            role: "system",
-            content: "Reply with a short confirmation only."
-          },
-          {
-            role: "user",
-            content: "Upwork Enhancer connection test. Reply OK if you can read this."
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      return {
-        ok: false,
-        error: `AI test failed: ${response.status} ${text.slice(0, 160)}`
-      };
-    }
-
-    const payload = await response.json();
-    const text =
-      payload &&
-      payload.choices &&
-      payload.choices[0] &&
-      payload.choices[0].message &&
-      payload.choices[0].message.content;
+    const result = await requestAiCompletion(
+      settings,
+      [
+        { role: "system", content: "Reply with a short confirmation only." },
+        {
+          role: "user",
+          content: "Upwork Enhancer connection test. Reply OK if you can read this."
+        }
+      ],
+      {
+        stream: true,
+        maxTokens: AI_TEST_MAX_TOKENS,
+        maxContinuations: 0,
+        timeoutMs: AI_TEST_TIMEOUT_MS
+      }
+    );
     return {
       ok: true,
-      text: String(text || "OK").trim().slice(0, 240)
+      text: String(result.text || "OK").trim().slice(0, 240)
     };
+  } catch (error) {
+    return { ok: false, error: `AI test failed: ${messageFromError(error)}` };
+  }
+}
+
+async function fetchAiModels(message) {
+  const settings = await aiSettingsForCheck(message);
+  if (!settings.api.baseUrl) {
+    return { ok: false, error: "API base URL is required" };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_MODELS_TIMEOUT_MS);
+  try {
+    const headers = { accept: "application/json" };
+    if (settings.api.apiKey) {
+      headers.authorization = `Bearer ${settings.api.apiKey}`;
+    }
+    const response = await fetch(aiEndpoint(settings, "/models"), {
+      method: "GET",
+      signal: controller.signal,
+      headers
+    });
+    if (!response.ok) {
+      const text = await safeResponseText(response);
+      return {
+        ok: false,
+        error: `Model list failed: ${response.status} ${text.slice(0, 200)}`
+      };
+    }
+    const models = modelIdsFromPayload(await response.json());
+    if (!models.length) {
+      return { ok: false, error: "The endpoint returned no models" };
+    }
+    return { ok: true, models };
+  } catch (error) {
+    return { ok: false, error: `Model list failed: ${messageFromError(error)}` };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function modelIdsFromPayload(payload) {
+  const list = Array.isArray(payload)
+    ? payload
+    : (payload && (payload.data || payload.models || payload.result)) || [];
+  if (!Array.isArray(list)) return [];
+  const ids = list
+    .map((item) =>
+      typeof item === "string"
+        ? item
+        : item && (item.id || item.name || item.model || "")
+    )
+    .map((id) => String(id || "").replace(/^models\//, "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
 }
 
 function isAiConfigured(settings) {
@@ -907,7 +1219,14 @@ function buildPrompt(job, score, settings, options = {}) {
     clientRating: job && job.clientRating,
     clientSpend: job && job.clientSpend,
     clientHireRate: job && job.clientHireRate,
-    clientAverageHourlyRate: job && job.clientAverageHourlyRate
+    clientAverageHourlyRate: job && job.clientAverageHourlyRate,
+    clientReviewCount: job && job.clientReviewCount,
+    countryOrTimezone: job && job.countryOrTimezone,
+    postedAge: job && job.postedAge,
+    postedAgeHours: job && job.postedAgeHours,
+    interviewCount: job && job.interviewCount,
+    inviteCount: job && job.inviteCount,
+    boostedBids: sanitizeBoostedBids(job && job.boostedBids)
   };
   const safeScore = {
     overallScore: score && score.overallScore,
@@ -923,6 +1242,15 @@ function buildPrompt(job, score, settings, options = {}) {
     missingSignals: score && score.missingSignals
   };
 
+  const boostNote =
+    safeJob.boostedBids && safeJob.boostedBids.status === "ok"
+      ? [
+          "",
+          "Job data includes boostedBids: the Connects bid by the top boosted proposals, highest first.",
+          "Use it when judging competition, and say whether boosting is worth it and roughly what bid would rank."
+        ]
+      : [];
+
   return [
     "Analyze this Upwork job for a freelancer.",
     "",
@@ -933,9 +1261,26 @@ function buildPrompt(job, score, settings, options = {}) {
     `Local scoring result: ${JSON.stringify(safeScore, null, 2)}`,
     "",
     `Job data: ${JSON.stringify(safeJob, null, 2)}`,
+    ...boostNote,
     "",
     ...outputInstructions
   ].join("\n");
+}
+
+function sanitizeBoostedBids(input) {
+  if (!input || typeof input !== "object") return null;
+  const status = ["ok", "error", "unavailable"].includes(input.status) ? input.status : "";
+  if (!status) return null;
+  if (status !== "ok") return { status };
+  const bids = Array.isArray(input.topBoostedBids)
+    ? input.topBoostedBids.map(Number).filter(Number.isFinite).slice(0, 4)
+    : [];
+  return {
+    status,
+    unit: "Connects",
+    topBoostedBids: bids,
+    boostedProposalsInTop: Number(input.boostedProposalsInTop) || bids.length
+  };
 }
 
 function buildQuestionAnswerPrompt({ job, question, template, settings }) {

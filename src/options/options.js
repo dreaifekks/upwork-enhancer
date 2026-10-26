@@ -9,6 +9,10 @@
   const openProfile = document.getElementById("openProfile");
   const profileMeta = document.getElementById("profileMeta");
   const testAi = document.getElementById("testAi");
+  const aiStatus = document.getElementById("aiStatus");
+  const fetchModels = document.getElementById("fetchModels");
+  const apiModelSelect = document.getElementById("apiModelSelect");
+  const MODEL_CACHE_KEY = "uwe_ai_models_v1";
   const tagEditors = new Map();
   const TAG_EDITOR_ROW_STEP = 3;
 
@@ -23,12 +27,15 @@
     settings = await loadSettings();
     populateForm(settings);
     applyLanguage(settings.language);
+    await restoreCachedModels();
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!validateThresholdOrder()) return;
       const next = readForm();
-      const permissionGranted = await requestApiPermission(next);
+      const permissionGranted = next.api.enabled
+        ? await requestApiPermission(next.api.baseUrl)
+        : true;
       if (!permissionGranted) {
         next.api.enabled = false;
         form.elements.apiEnabled.checked = false;
@@ -79,25 +86,75 @@
     });
 
     testAi.addEventListener("click", async () => {
-      if (!validateThresholdOrder()) return;
-      const next = readForm();
-      const permissionGranted = await requestApiPermission(next);
+      const lang = language.value;
+      const api = draftApi();
+      const permissionGranted = await requestApiPermission(api.baseUrl);
       if (!permissionGranted) {
-        setStatus(UWE.t(next.language, "options.permissionDenied"));
+        setAiStatus(UWE.t(lang, "options.permissionDenied"), true);
         return;
       }
-      await saveSettings(next);
-      settings = next;
-      setStatus(UWE.t(settings.language, "options.aiTesting"));
-      const response = await sendMessage({ type: "TEST_AI_CONFIG" });
-      setStatus(
-        response && response.ok
-          ? `${UWE.t(settings.language, "options.aiTestPassed")}: ${response.text}`
-          : `${UWE.t(settings.language, "options.aiTestFailed")}: ${
-              (response && response.error) || ""
-            }`
-      );
+      setAiStatus(UWE.t(lang, "options.aiTesting"));
+      testAi.disabled = true;
+      try {
+        const response = await sendMessage({ type: "TEST_AI_CONFIG", api });
+        const passed = Boolean(response && response.ok);
+        setAiStatus(
+          passed
+            ? `${UWE.t(lang, "options.aiTestPassed")}: ${response.text}`
+            : `${UWE.t(lang, "options.aiTestFailed")}: ${
+                (response && response.error) || ""
+              }`,
+          !passed
+        );
+      } catch (error) {
+        setAiStatus(`${UWE.t(lang, "options.aiTestFailed")}: ${errorText(error)}`, true);
+      } finally {
+        testAi.disabled = false;
+      }
     });
+
+    fetchModels.addEventListener("click", async () => {
+      const lang = language.value;
+      const api = draftApi();
+      const permissionGranted = await requestApiPermission(api.baseUrl);
+      if (!permissionGranted) {
+        setAiStatus(UWE.t(lang, "options.permissionDenied"), true);
+        return;
+      }
+      setAiStatus(UWE.t(lang, "options.fetchingModels"));
+      fetchModels.disabled = true;
+      try {
+        const response = await sendMessage({ type: "FETCH_AI_MODELS", api });
+        if (response && response.ok && Array.isArray(response.models)) {
+          renderModelOptions(response.models);
+          await cacheModels(api.baseUrl, response.models);
+          setAiStatus(
+            UWE.t(lang, "options.modelsLoaded", { count: response.models.length })
+          );
+          apiModelSelect.focus();
+        } else {
+          setAiStatus(
+            `${UWE.t(lang, "options.modelsFailed")}: ${(response && response.error) || ""}`,
+            true
+          );
+        }
+      } catch (error) {
+        setAiStatus(`${UWE.t(lang, "options.modelsFailed")}: ${errorText(error)}`, true);
+      } finally {
+        fetchModels.disabled = false;
+      }
+    });
+
+    apiModelSelect.addEventListener("change", () => {
+      if (apiModelSelect.value) {
+        form.elements.apiModel.value = apiModelSelect.value;
+      } else {
+        form.elements.apiModel.focus();
+        form.elements.apiModel.select();
+      }
+    });
+
+    form.elements.apiModel.addEventListener("input", syncModelSelect);
 
     language.addEventListener("change", () => {
       applyLanguage(language.value);
@@ -160,6 +217,7 @@
   function populateForm(next) {
     form.elements.language.value = next.language;
     form.elements.theme.value = next.theme || "auto";
+    form.elements.showBoostBids.checked = next.showBoostBids !== false;
     form.elements.profileSummary.value = next.profileSummary || "";
     form.elements.profileUrl.value = next.profileUrl || "";
     setTagEditorValue("preferredSkills", next.preferredSkills);
@@ -189,6 +247,7 @@
     return UWE.normalizeSettings({
       language: current.get("language"),
       theme: current.get("theme"),
+      showBoostBids: Boolean(current.get("showBoostBids")),
       profileSummary: current.get("profileSummary"),
       profileUrl: current.get("profileUrl"),
       profileUpdatedAt: settings.profileUpdatedAt,
@@ -410,23 +469,82 @@
     state.editor.style.setProperty("--tag-editor-rows", String(visibleRows));
   }
 
-  async function requestApiPermission(next) {
-    if (
-      !next.api.enabled ||
-      !next.api.baseUrl ||
-      typeof chrome === "undefined" ||
-      !chrome.permissions
-    ) {
+  // Call this directly from a click handler: Chrome only shows the
+  // permission prompt while the user gesture is still active.
+  async function requestApiPermission(baseUrl) {
+    if (!baseUrl || typeof chrome === "undefined" || !chrome.permissions) {
       return true;
     }
     let originPattern = "";
     try {
-      const url = new URL(next.api.baseUrl);
+      const url = new URL(baseUrl);
       originPattern = `${url.origin}/*`;
     } catch (_) {
       return true;
     }
     return await chrome.permissions.request({ origins: [originPattern] });
+  }
+
+  function draftApi() {
+    return {
+      baseUrl: String(form.elements.apiBaseUrl.value || "").trim(),
+      model: String(form.elements.apiModel.value || "").trim(),
+      apiKey: String(form.elements.apiKey.value || "")
+    };
+  }
+
+  function renderModelOptions(models) {
+    const current = String(form.elements.apiModel.value || "").trim();
+    const custom = apiModelSelect.querySelector('option[value=""]');
+    apiModelSelect.textContent = "";
+    if (custom) apiModelSelect.append(custom);
+    models.forEach((model) => {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      apiModelSelect.append(option);
+    });
+    apiModelSelect.hidden = models.length === 0;
+    if (!current && models.length) {
+      form.elements.apiModel.value = models[0];
+    }
+    syncModelSelect();
+  }
+
+  function syncModelSelect() {
+    const value = String(form.elements.apiModel.value || "").trim();
+    const match = Array.from(apiModelSelect.options).find(
+      (option) => option.value && option.value === value
+    );
+    apiModelSelect.value = match ? match.value : "";
+  }
+
+  async function restoreCachedModels() {
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+      return;
+    }
+    const stored = await chrome.storage.local.get(MODEL_CACHE_KEY);
+    const cache = stored && stored[MODEL_CACHE_KEY];
+    if (
+      cache &&
+      Array.isArray(cache.models) &&
+      cache.baseUrl === String(form.elements.apiBaseUrl.value || "").trim()
+    ) {
+      renderModelOptions(cache.models.map(String));
+    }
+  }
+
+  async function cacheModels(baseUrl, models) {
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+      return;
+    }
+    await chrome.storage.local.set({
+      [MODEL_CACHE_KEY]: { baseUrl, models, fetchedAt: new Date().toISOString() }
+    });
+  }
+
+  function errorText(error) {
+    return error && error.message ? error.message : String(error || "");
   }
 
   function validatedProfileUrl(value) {
@@ -465,6 +583,15 @@
       return;
     }
     document.documentElement.setAttribute("data-theme", resolved);
+  }
+
+  function setAiStatus(message, isError = false) {
+    if (!aiStatus) {
+      setStatus(message);
+      return;
+    }
+    aiStatus.textContent = message || "";
+    aiStatus.classList.toggle("is-error", Boolean(isError));
   }
 
   function setStatus(message) {

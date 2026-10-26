@@ -391,3 +391,76 @@ button:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.model-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.model-picker__row {
+  display: flex;
+  gap: 8px;
+}
+
+.model-picker__row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-picker__row .secondary-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Custom select chevron: the native arrow sits flush against the edge in
+   dark mode and ignores our padding. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+    linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% + 1px),
+    calc(100% - 13px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A bigger, clearer remove target; the pseudo element widens the hit area
+   without changing the tag layout. */
+.tag-editor__tag {
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.tag-editor__remove {
+  position: relative;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 5px;
+  color: var(--ink-2);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.tag-editor__remove::before {
+  content: "";
+  position: absolute;
+  inset: -4px -4px -4px -2px;
+}
+
+.inline-status {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.inline-status.is-error {
+  color: var(--danger, #e5484d);
+}

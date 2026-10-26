@@ -38,10 +38,18 @@
         "src/shared/i18n.js",
         "src/scoring/scoreJob.js",
         "src/content/upworkParser.js",
-        "src/content/upworkContentScript.js"
+        "src/content/boostBids.js",
+        "src/content/upworkContentScript.js",
+        "src/content/feedFilterMemory.js"
       ],
       "css": ["src/content/upworkContentScript.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.upwork.com/*", "https://*.upwork.com/*"],
+      "js": ["src/content/boostBridge.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ]
 }

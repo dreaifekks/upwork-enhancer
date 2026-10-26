@@ -185,8 +185,10 @@ test("detail review header summarizes verdict, reason, and sub-scores", () => {
   assert.match(contentScript, /class="uwe-verdict__reason"/);
   assert.match(
     contentScript,
-    /<div class="uwe-sidebar__compact">\$\{metricBadges\(result\)\}<\/div>/
+    /<div class="uwe-sidebar__compact">\$\{metricBadges\(result\)\}\$\{boostBadge\(\s*result\.jobId\s*\)\}<\/div>/
   );
+  assert.match(contentScript, /\$\{sidebarBoostLine\(result\.jobId\)\}/);
+  assert.match(contentScript, /requestSidebarBoost\(result\.jobId\)/);
   assert.match(contentScript, /function reasonColumns\(result\)/);
   assert.match(contentScript, /data-uwe-toggle-label/);
   assert.match(contentScript, /new ResizeObserver/);

@@ -16,7 +16,9 @@ This is an unofficial extension and is not affiliated with, endorsed by, or spon
 - Imports a visible freelancer profile into local matching preferences.
 - Saves settings and decision metadata locally in browser storage.
 - Supports English and Chinese extension UI text.
-- Offers optional AI analysis through a user-provided API endpoint and API key.
+- Offers optional AI analysis through a user-provided API endpoint and API key, with a model list fetched from the endpoint's `/models` route.
+- Remembers the Find Work feed filters you last applied and re-applies them after a reload.
+- Shows the top boosted bids, in Connects, on job cards as they scroll into view. It uses Upwork's own sign-in helper on the page, starts at most 10 lookups a minute, and can be turned off in settings.
 
 ## Privacy And Scope
 
@@ -110,6 +112,10 @@ Before publishing a release, verify:
 - Options can switch extension-owned UI text between English and Chinese.
 - Updating settings refreshes already-open Upwork tabs without a manual page reload.
 - The extension still works when AI settings are empty or disabled.
+- Clicking the label or empty space of a settings tag box focuses the input and never removes a tag.
+- **Fetch models** fills the model picker, and **Test AI connection** works before saving.
+- Filters applied on Find Work come back after a page reload; **Clear** stops the restore.
+- Job cards show a Boost badge with up to four bids, and no more than 10 lookups start per minute.
 
 ## Project Docs
 

@@ -21,10 +21,29 @@
   let detailRenderGeneration = 0;
   let sidebarCollapsed = true;
   let aiRenderTimer = null;
+  let aiResultCollapsed = false;
   let sidebarResizeObserver = null;
   const detailScoreCache = new Map();
   const listJobCache = new Map();
   const detailDraftCache = new Map();
+  const visibleBoostJobs = new Set();
+  const priorityBoostJobs = new Set();
+  let sidebarBoostJobId = "";
+  const boostLoader =
+    UWE.boostBids && UWE.boostBids.createBoostLoader
+      ? UWE.boostBids.createBoostLoader({
+          onUpdate: updateBoostBadges,
+          isEnabled: boostBidsEnabled,
+          isWanted: (jobId) =>
+            visibleBoostJobs.has(jobId) ||
+            priorityBoostJobs.has(jobId) ||
+            jobId === sidebarBoostJobId
+        })
+      : null;
+  const boostObserver =
+    boostLoader && typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(handleBoostVisibility, { rootMargin: "200px 0px" })
+      : null;
   const DETAIL_SCORE_CACHE_MAX = 30;
   const QUESTION_TEMPLATE_MATCH_THRESHOLD = 0.38;
   const SIDEBAR_NARROW_WIDTH = 520;
@@ -168,6 +187,9 @@
     ) {
       aiAnalysisState.text = message.text;
     }
+    if (typeof message.truncated === "boolean") {
+      aiAnalysisState.truncated = message.truncated;
+    }
     if (message.error) {
       aiAnalysisState.status = "error";
       aiAnalysisState.error = String(message.error);
@@ -179,19 +201,22 @@
     scheduleAiRender(Boolean(message.error || message.done));
   }
 
+  // Throttle, not debounce: a steady stream still repaints every frame or so
+  // instead of waiting for a pause in the tokens.
   function scheduleAiRender(immediate) {
-    if (aiRenderTimer) {
-      window.clearTimeout(aiRenderTimer);
-      aiRenderTimer = null;
-    }
     if (immediate) {
+      if (aiRenderTimer) {
+        window.clearTimeout(aiRenderTimer);
+        aiRenderTimer = null;
+      }
       renderAiState(document.querySelector(".uwe-sidebar"));
       return;
     }
+    if (aiRenderTimer) return;
     aiRenderTimer = window.setTimeout(() => {
       aiRenderTimer = null;
       renderAiState(document.querySelector(".uwe-sidebar"));
-    }, 60);
+    }, 50);
   }
 
   if (runtime && runtime.onMessage) {
@@ -551,13 +576,112 @@
     panel.innerHTML = [
       contextBadge(job),
       verdictBadge(result),
-      metricBadges(result)
+      metricBadges(result),
+      boostBadge(result.jobId)
     ].join("");
 
     if (!existing) {
       insertCardPanel(card, panel);
     }
+    observeBoost(panel);
     card.setAttribute("data-uwe-text", nextText);
+  }
+
+  function boostBidsEnabled() {
+    return Boolean(boostLoader) && settings.showBoostBids !== false;
+  }
+
+  function boostBadge(jobId) {
+    if (!boostBidsEnabled() || !boostLoader.jobRef(jobId)) return "";
+    const state = boostLoader.get(jobId);
+    let value = "…";
+    let help = t("boost.loading");
+    if (state && state.status === "done") {
+      value = state.bids.length ? UWE.boostBids.formatBids(state.bids) : "—";
+      help = state.bids.length ? t("boost.help") : t("boost.none");
+    } else if (state && state.status === "error") {
+      value = "—";
+      help = t("boost.error", { error: state.error });
+    }
+    return badge(t("badge.boost"), value, "uwe-badge--boost", help).replace(
+      'class="uwe-badge',
+      'data-uwe-boost class="uwe-badge'
+    );
+  }
+
+  // The AI should see the same boosted bids the cards show, so fetch them for
+  // the reviewed job first (ahead of the card queue) and wait briefly.
+  async function boostBidsForAi(jobId) {
+    if (!boostBidsEnabled() || !boostLoader.jobRef(jobId)) return null;
+    priorityBoostJobs.add(jobId);
+    boostLoader.request(jobId, { priority: true });
+    const deadline = Date.now() + 8000;
+    let state = boostLoader.get(jobId);
+    while ((!state || state.status === "loading") && Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      state = boostLoader.get(jobId);
+    }
+    priorityBoostJobs.delete(jobId);
+    updateBoostBadges(jobId);
+    if (!state || state.status === "loading") return { status: "unavailable" };
+    if (state.status === "error") return { status: "error", error: state.error };
+    return {
+      status: "ok",
+      unit: "Connects",
+      topBoostedBids: state.bids.slice(0, 4).map((bid) => bid.amount),
+      boostedProposalsInTop: state.bids.length
+    };
+  }
+
+  function observeBoost(panel) {
+    if (!boostObserver || !boostBidsEnabled()) return;
+    if (!boostLoader.jobRef(panel.getAttribute("data-uwe-job-id"))) return;
+    boostObserver.observe(panel);
+  }
+
+  function handleBoostVisibility(entries) {
+    entries.forEach((entry) => {
+      const jobId = entry.target.getAttribute("data-uwe-job-id") || "";
+      if (!entry.target.isConnected) {
+        boostObserver.unobserve(entry.target);
+        visibleBoostJobs.delete(jobId);
+        return;
+      }
+      if (entry.isIntersecting) {
+        visibleBoostJobs.add(jobId);
+        boostLoader.request(jobId);
+      } else {
+        visibleBoostJobs.delete(jobId);
+      }
+    });
+  }
+
+  function updateBoostBadges(jobId) {
+    if (!jobId) return;
+    const html = boostBadge(jobId);
+    document.querySelectorAll(".uwe-card-panel[data-uwe-job-id]").forEach((panel) => {
+      if (panel.getAttribute("data-uwe-job-id") !== jobId) return;
+      const current = panel.querySelector("[data-uwe-boost]");
+      if (current) {
+        if (html) {
+          current.outerHTML = html;
+        } else {
+          current.remove();
+        }
+      } else if (html) {
+        panel.insertAdjacentHTML("beforeend", html);
+      }
+    });
+    document.querySelectorAll(".uwe-sidebar[data-uwe-job-id]").forEach((sidebar) => {
+      if (sidebar.getAttribute("data-uwe-job-id") !== jobId) return;
+      sidebar.querySelectorAll("[data-uwe-boost]").forEach((current) => {
+        if (html) {
+          current.outerHTML = html;
+        } else {
+          current.remove();
+        }
+      });
+    });
   }
 
   function metricBadges(result) {
@@ -969,6 +1093,7 @@
     sidebar.classList.toggle("uwe-sidebar--inline", placement === "inline");
     sidebar.classList.toggle("uwe-sidebar--floating-left", placement === "floating-left");
     sidebar.setAttribute("data-uwe-ai-job-key", aiJobKey(job, result));
+    sidebar.setAttribute("data-uwe-job-id", result.jobId || "");
     sidebar.setAttribute("data-uwe-draft-job-key", draftKey);
     placeSidebar(sidebar, placement, anchor);
     ensureInlineSidebarAnchored(sidebar, placement);
@@ -977,6 +1102,19 @@
     bindSidebarEvents(sidebar, job, result);
     restoreSidebarDraft(sidebar, draft);
     renderAiState(sidebar);
+    requestSidebarBoost(result.jobId);
+  }
+
+  function sidebarBoostLine(jobId) {
+    const html = boostBadge(jobId);
+    return html ? `<div class="uwe-sidebar__boost">${html}</div>` : "";
+  }
+
+  // The reviewed job loads its boosted bids right away, ahead of the cards.
+  function requestSidebarBoost(jobId) {
+    if (!boostBidsEnabled() || !boostLoader.jobRef(jobId)) return;
+    sidebarBoostJobId = jobId;
+    boostLoader.request(jobId, { priority: true });
   }
 
   function sidebarTemplate(
@@ -1014,7 +1152,9 @@
                 : ""
             }
           </div>
-          <div class="uwe-sidebar__compact">${metricBadges(result)}</div>
+          <div class="uwe-sidebar__compact">${metricBadges(result)}${boostBadge(
+            result.jobId
+          )}</div>
           <div class="uwe-sidebar__caption">
             <h2 class="uwe-sidebar__title">${escapeHtml(t("sidebar.title"))}</h2>
             <p class="uwe-job-title">${escapeHtml(job.title)}</p>
@@ -1052,6 +1192,7 @@
             t(`risk.${result.riskLevel}`)
           )}
         </section>
+        ${sidebarBoostLine(result.jobId)}
         ${reasonColumns(result)}
         ${proposalQuestionsSection(job, templates)}
         <section class="uwe-section uwe-decision">
@@ -1089,6 +1230,10 @@
             )}</button>
             <div class="uwe-status" data-uwe-status role="status" aria-live="polite"></div>
           </div>
+          <button class="uwe-ai-toggle" type="button" data-uwe-ai-toggle aria-expanded="true" hidden>
+            <span data-uwe-ai-toggle-label>${escapeHtml(t("sidebar.aiCollapse"))}</span>
+            <i class="uwe-ai-toggle__chevron" aria-hidden="true"></i>
+          </button>
           <div class="uwe-ai-result" data-uwe-ai-result hidden></div>
         </section>
       </div>
@@ -1356,16 +1501,28 @@
       status.textContent = response && response.ok ? t("sidebar.saved") : "Save failed";
     });
 
+    const aiToggle = sidebar.querySelector("[data-uwe-ai-toggle]");
+    if (aiToggle) {
+      aiToggle.addEventListener("click", () => {
+        aiResultCollapsed = !aiResultCollapsed;
+        syncAiCollapse(sidebar);
+      });
+    }
+
     const aiButton = sidebar.querySelector("[data-uwe-ai]");
     aiButton.addEventListener("click", async (event) => {
       if (!event.isTrusted) return;
       if (aiButton.disabled) return;
       const state = startAiAnalysis(job, result);
       renderAiState(sidebar);
+      const boostedBids = await boostBidsForAi(result.jobId || job.jobId);
+      if (!aiAnalysisState || aiAnalysisState.requestId !== state.requestId) {
+        return;
+      }
       const response = await sendMessage({
         type: "AI_ANALYZE_STREAM",
         requestId: state.requestId,
-        job: compactJobForAi(job),
+        job: { ...compactJobForAi(job), boostedBids },
         score: compactScoreForAi(result)
       });
       if (!aiAnalysisState || aiAnalysisState.requestId !== state.requestId) {
@@ -1663,22 +1820,43 @@
     }
 
     const isLoading = aiAnalysisState.status === "loading";
-    output.hidden = false;
+    syncAiCollapse(sidebar);
     if (aiButton) aiButton.disabled = !configured || isLoading;
 
     if (aiAnalysisState.status === "error") {
       const error = aiAnalysisState.error || "AI failed";
       status.textContent = t("sidebar.aiError");
-      output.innerHTML = `<p>${escapeHtml(error)}</p>`;
+      // Keep whatever the model already wrote; only append the failure.
+      output.innerHTML = `${
+        aiAnalysisState.text ? renderMarkdown(aiAnalysisState.text) : ""
+      }<p class="uwe-ai-notice">${escapeHtml(error)}</p>`;
       return;
     }
 
     status.textContent = isLoading ? t("sidebar.aiLoading") : t("sidebar.aiResult");
     output.innerHTML = aiAnalysisState.text
-      ? renderMarkdown(aiAnalysisState.text)
+      ? `${renderMarkdown(aiAnalysisState.text)}${
+          aiAnalysisState.truncated && !isLoading
+            ? `<p class="uwe-ai-notice">${escapeHtml(t("sidebar.aiTruncated"))}</p>`
+            : ""
+        }`
       : `<p>${escapeHtml(t("sidebar.aiLoading"))}</p>`;
     if (aiAnalysisState.status === "done") {
       fillQuestionAnswersFromAiText(sidebar, aiAnalysisState.text);
+    }
+  }
+
+  function syncAiCollapse(sidebar) {
+    const output = sidebar.querySelector("[data-uwe-ai-result]");
+    const toggle = sidebar.querySelector("[data-uwe-ai-toggle]");
+    if (!output) return;
+    output.hidden = aiResultCollapsed;
+    if (!toggle) return;
+    toggle.hidden = false;
+    toggle.setAttribute("aria-expanded", aiResultCollapsed ? "false" : "true");
+    const label = toggle.querySelector("[data-uwe-ai-toggle-label]");
+    if (label) {
+      label.textContent = aiResultCollapsed ? t("sidebar.aiExpand") : t("sidebar.aiCollapse");
     }
   }
 
@@ -1777,7 +1955,12 @@
       clientSpend: job.clientSpend,
       clientHireRate: job.clientHireRate,
       clientAverageHourlyRate: job.clientAverageHourlyRate,
-      countryOrTimezone: job.countryOrTimezone
+      clientReviewCount: job.clientReviewCount,
+      countryOrTimezone: job.countryOrTimezone,
+      postedAge: job.postedAge,
+      postedAgeHours: job.postedAgeHours,
+      interviewCount: job.interviewCount,
+      inviteCount: job.inviteCount
     };
   }
 
@@ -2104,6 +2287,9 @@
   }
 
   async function init() {
+    if (boostLoader) {
+      window.addEventListener("message", boostLoader.handleMessage);
+    }
     await loadSettings();
     scheduleRender();
     bindScoreHelpEvents();

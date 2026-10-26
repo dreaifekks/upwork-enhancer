@@ -33,8 +33,8 @@
 
         <section class="popup-section">
           <h2 data-i18n="popup.preferences">Preferences</h2>
-          <label class="field">
-            <span data-i18n="popup.preferredSkills">Preferred skills</span>
+          <div class="field">
+            <label for="preferredSkillsTagInput" data-i18n="popup.preferredSkills">Preferred skills</label>
             <input id="preferredSkills" type="hidden" />
             <div class="tag-editor" data-tag-editor="preferredSkills">
               <div class="tag-editor__tags" data-tag-list></div>
@@ -43,11 +43,12 @@
                 type="text"
                 autocomplete="off"
                 data-tag-input
+                id="preferredSkillsTagInput"
               />
             </div>
-          </label>
-          <label class="field">
-            <span data-i18n="popup.avoidedSkills">Avoided skills</span>
+          </div>
+          <div class="field">
+            <label for="avoidedSkillsTagInput" data-i18n="popup.avoidedSkills">Avoided skills</label>
             <input id="avoidedSkills" type="hidden" />
             <div class="tag-editor" data-tag-editor="avoidedSkills">
               <div class="tag-editor__tags" data-tag-list></div>
@@ -56,9 +57,10 @@
                 type="text"
                 autocomplete="off"
                 data-tag-input
+                id="avoidedSkillsTagInput"
               />
             </div>
-          </label>
+          </div>
           <div class="field-grid">
             <label class="field">
               <span data-i18n="popup.minimumHourlyRate">Min hourly</span>
