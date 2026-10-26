@@ -97,3 +97,19 @@ test("a priority request jumps ahead of queued cards", () => {
   h.reply(h.posted[0], { ok: true, bids: [] });
   assert.equal(h.posted[1].uid, "3333333");
 });
+
+test("expired bids stay visible while they refresh", () => {
+  const h = harness();
+  h.loader.request("~021111111");
+  h.reply(h.posted[0], { ok: true, bids: [{ amount: 40 }] });
+  h.advance(11 * 60 * 1000);
+  const stale = h.loader.get("~021111111");
+  assert.equal(stale.status, "done");
+  assert.equal(stale.stale, true);
+  assert.deepEqual(stale.bids, [{ amount: 40 }]);
+  h.loader.request("~021111111");
+  assert.equal(h.posted.length, 2);
+  h.reply(h.posted[1], { ok: true, bids: [{ amount: 55 }] });
+  assert.deepEqual(h.loader.get("~021111111").bids, [{ amount: 55 }]);
+  assert.equal(h.loader.get("~021111111").stale, undefined);
+});

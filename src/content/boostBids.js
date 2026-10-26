@@ -39,9 +39,12 @@
     let sequence = 0;
     let drainTimer = null;
 
+    // Expired results stay visible (marked stale) until a refresh replaces
+    // them, so a card never falls back to a loading placeholder.
     function get(jobId) {
       const entry = cache.get(jobId);
       if (entry && entry.expiresAt > now()) return entry;
+      if (entry && entry.status === "done") return { ...entry, stale: true };
       if (pending.has(jobId) || queue.includes(jobId)) return { status: "loading" };
       return null;
     }

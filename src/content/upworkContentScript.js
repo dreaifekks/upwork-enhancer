@@ -584,6 +584,11 @@
       insertCardPanel(card, panel);
     }
     observeBoost(panel);
+    if (boostLoader && visibleBoostJobs.has(result.jobId)) {
+      // A re-render does not fire the visibility observer again, so refresh
+      // cards that are already on screen (for example after the cache expires).
+      boostLoader.request(result.jobId);
+    }
     card.setAttribute("data-uwe-text", nextText);
   }
 
