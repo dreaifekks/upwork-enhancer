@@ -1,6 +1,6 @@
 {
   "name": "upwork-enhancer",
-  "version": "0.1.21",
+  "version": "0.2.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "Browser extension for evaluating Upwork opportunities, with Chrome packaging and a macOS Safari build.",
