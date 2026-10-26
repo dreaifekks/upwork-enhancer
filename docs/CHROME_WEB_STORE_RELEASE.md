@@ -1,8 +1,8 @@
 # Chrome Web Store Release Checklist
 
-## Prepared update: 0.2.0 (2026-10-27)
+## Prepared update: 0.2.1 (2026-10-27)
 
-- Upload package: `dist/chrome/upwork-enhancer-v0.2.0.zip`, also attached to the GitHub release `v0.2.0`. Not submitted yet.
+- Upload package: `dist/chrome/upwork-enhancer-v0.2.1.zip`. It is 0.2.0 plus a fix that keeps boosted bids visible after their cache expires. Not submitted yet.
 - Validation: 77 tests passed, including the local Chrome fixture render, 0 failures. Boosted bids on list cards were observed in a real logged-in Chrome session with the unpacked build.
 - Permissions are unchanged from 0.1.21: `storage`, `activeTab`, Upwork host permissions, and optional host permissions for the user's AI endpoint. The update should not trigger a new permission warning for existing users.
 - New in 0.2.0: boosted bids on job cards and in the review panel, remembered Find Work filters, a model list fetched from the AI endpoint, collapsible AI results, smoother AI streaming, and settings fixes.
@@ -45,7 +45,7 @@ Core scoring works without AI. Optional AI uses your own endpoint and API key; p
 
 ### Screenshots
 
-All three current screenshots show 0.1.21. The list and review panel now carry a Boost badge, and the AI settings layout changed. Recapture all three from a real session with 0.2.0 before submitting.
+The three files in `assets/store/screenshots/` were recaptured on 2026-10-27 from a real Chrome Beta session running 0.2.0 in English: job cards with Boost badges, the expanded review panel with its Boost line, and the AI and appearance settings. All are 1280×800 PNG24. No personal account areas or real API key appear; the settings shot uses a placeholder key.
 
 ### Reviewer notes draft
 
